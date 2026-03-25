@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
-import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, FaturaMensal, CategoriaTotal, CategoriaCustomizada } from '@/types';
+import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada } from '@/types';
 import { gerarMesKey, calcularResumo, formatarMoeda, obterNomeMes, gerarId } from '@/utils/financeiro';
 import { DadosInputMagico } from '@/utils/categorias';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import Toast from '@/components/Toast';
+import InputMagico from '@/components/InputMagico';
 import ModalReceita from '@/components/ModalReceita';
 import ModalDespesa from '@/components/ModalDespesa';
 import ListaTransacoes from '@/components/ListaTransacoes';
@@ -48,11 +49,9 @@ export default function DashboardPage() {
   const [cartaoSelecionadoId, setCartaoSelecionadoId] = useState('');
   const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
 
-  // NOVO: Atalhos Rápidos
+  // Atalhos Rápidos
   const [categoriaPreenchida, setCategoriaPreenchida] = useState('');
   const [descricaoPreenchida, setDescricaoPreenchida] = useState('');
-
-  // NOVO: dados pré-preenchidos via Input Mágico / QR Code
   const [dadosIniciais, setDadosIniciais] = useState<DadosInputMagico | null>(null);
 
   // Toast
@@ -64,7 +63,6 @@ export default function DashboardPage() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        // Identificar nome baseado no email
         const email = user.email?.toLowerCase().trim() || '';
         let nome = 'Usuário';
         
@@ -83,7 +81,7 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // Firebase com migração de IDs
+  // Firebase
   useEffect(() => {
     if (!usuario) return;
     const dbRef = ref(database, `usuarios/${usuario.uid}`);
@@ -127,15 +125,81 @@ export default function DashboardPage() {
     setDadosIniciais(null);
   };
 
-  // NOVO: Input Mágico — abre o modal certo com dados pré-preenchidos
-  const handleInputMagico = useCallback((dados: DadosInputMagico) => {
-    setDadosIniciais(dados);
-    setTransacaoEditando(null);
-    setCategoriaPreenchida('');
-    setDescricaoPreenchida('');
-    if (dados.tipo === 'renda') setModalReceitaAberto(true);
-    else setModalDespesaAberto(true);
-  }, []);
+  // Input Mágico - ATUALIZADO
+  const handleInputMagico = useCallback(async (dados: DadosInputMagico) => {
+    if (!usuario) return;
+    
+    try {
+      // Se for crédito (cartão) e tiver cartão identificado
+      if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
+        // Adicionar na fatura do cartão
+        const item: ItemFatura = {
+          id: gerarId(),
+          cartaoId: dados.cartaoId,
+          data: dados.data,
+          descricao: dados.descricao,
+          valor: dados.valor,
+          categoria: dados.categoria,
+          pessoa: dados.pessoa,
+          parcelas: 1,
+          parcelaAtual: 1
+        };
+
+        const novasFaturas = { ...sistema.faturas };
+        const mesKey = gerarMesKey(new Date(dados.data + 'T00:00:00'));
+        
+        if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
+        
+        const existente = novasFaturas[mesKey].find(f => f.cartaoId === dados.cartaoId);
+        if (existente) {
+          existente.itens.push(item);
+          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
+        } else {
+          novasFaturas[mesKey].push({
+            cartaoId: dados.cartaoId,
+            mesReferencia: mesKey,
+            itens: [item],
+            totalFatura: dados.valor,
+            paga: false
+          });
+        }
+        
+        await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+        showToast(`💳 ${dados.descricao} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
+      } 
+      // Se for crédito mas não tem cartão identificado
+      else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
+        showToast('❌ Cartão não encontrado. Cadastre o cartão primeiro!', 'erro');
+        return;
+      }
+      // Se for débito (dinheiro) - adiciona como transação normal
+      else {
+        const novaTransacao: Transacao = {
+          id: gerarId(),
+          data: dados.data,
+          categoria: dados.categoria,
+          descricao: dados.descricao,
+          valor: dados.valor,
+          pessoa: dados.pessoa,
+          tipo: dados.tipo,
+          pago: dados.pago
+        };
+
+        const mesKey = gerarMesKey(new Date(dados.data + 'T00:00:00'));
+        const dbRef = ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`);
+        const snapshot = await get(dbRef);
+        const existentes = snapshot.exists()
+          ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
+          : [];
+        
+        await set(dbRef, [...existentes, novaTransacao]);
+        showToast(`${dados.tipo === 'despesa' ? '💸' : '💰'} ${dados.descricao} adicionada!`, 'sucesso');
+      }
+    } catch (error) {
+      console.error('Erro ao adicionar:', error);
+      showToast('Erro ao adicionar transação', 'erro');
+    }
+  }, [usuario, sistema.faturas, showToast]);
 
   const handleMarcarPago = async (id: string) => {
     if (!usuario) return;
@@ -222,7 +286,6 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
   };
 
-  // NOVO: Calcular saldo do Vale Alimentação
   const calcularSaldoVale = () => {
     const mesKey = gerarMesKey(dataReferencia);
     const transacoes = sistema.dadosPorMes[mesKey] || [];
@@ -289,8 +352,6 @@ export default function DashboardPage() {
   return (
     <>
       <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'Inter, sans-serif' }}>
-
-        {/* Header */}
         <header style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: `0.75rem ${px}`, position: 'sticky', top: 0, zIndex: 100 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1400px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -322,7 +383,6 @@ export default function DashboardPage() {
           </div>
         </header>
 
-        {/* Tabs */}
         <div style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: `0 ${px}`, overflowX: 'auto' }}>
           <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: isMobile ? '0' : '0.5rem', minWidth: 'max-content' }}>
             {tabs.map(tab => (
@@ -334,10 +394,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Main */}
         <main style={{ padding: `1.5rem ${px}`, maxWidth: '1400px', margin: '0 auto' }}>
-
-          {/* Filtros de mês */}
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={filtro} onChange={e => setFiltro(e.target.value)}
               style={{ padding: '0.5rem 0.75rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', fontSize: '0.875rem', background: 'white' }}>
@@ -354,10 +411,8 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Dashboard */}
           {tabAtiva === 'dashboard' && (
             <div>
-              {/* Cards de resumo */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
@@ -372,21 +427,32 @@ export default function DashboardPage() {
                   <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>💵 Disponível</div>
                   <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
                 </div>
-                {/* NOVO: Card Vale Alimentação */}
                 <div style={{ background: saldoVale >= 0 ? '#8b5cf6' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white' }}>
                   <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>🎫 Vale Alimentação</div>
                   <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(saldoVale)}</div>
                 </div>
               </div>
 
-              {/* NOVO: Atalhos Rápidos */}
+              {/* ATUALIZADO: InputMagico com cartões */}
+              <InputMagico 
+                usuarioNome={usuario.nome} 
+                cartoes={sistema.cartoes}
+                onTransacaoCriada={handleInputMagico} 
+              />
+
               <AtalhosRapidos
-                onAtalhoClick={(cat, desc) => {
-                  setCategoriaPreenchida(cat);
-                  setDescricaoPreenchida(desc);
-                  setTransacaoEditando(null);
-                  setDadosIniciais(null);
-                  setModalDespesaAberto(true);
+                userId={usuario.uid}
+                onAtalhoClick={(cat, desc, tipo) => {
+                  if (tipo === 'receita') {
+                    setDadosIniciais({ tipo: 'renda', categoria: cat, descricao: desc, valor: 0, data: '', pessoa: usuario.nome, pago: true });
+                    setModalReceitaAberto(true);
+                  } else {
+                    setCategoriaPreenchida(cat);
+                    setDescricaoPreenchida(desc);
+                    setTransacaoEditando(null);
+                    setDadosIniciais(null);
+                    setModalDespesaAberto(true);
+                  }
                 }}
               />
 
@@ -444,7 +510,6 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      {/* Modais */}
       <ModalReceita
         aberto={modalReceitaAberto}
         onFechar={handleFecharReceita}
@@ -455,7 +520,6 @@ export default function DashboardPage() {
         onErro={msg => showToast(msg, 'erro')}
       />
 
-      {/* ATUALIZADO: ModalDespesa com props dos atalhos */}
       <ModalDespesa
         aberto={modalDespesaAberto}
         onFechar={handleFecharDespesa}

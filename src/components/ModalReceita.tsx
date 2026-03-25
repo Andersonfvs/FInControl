@@ -10,11 +10,21 @@ interface Props {
   aberto: boolean;
   onFechar: () => void;
   usuarioNome: string;
-  userId: string; // NOVO: userId necessário
+  userId: string;
   transacaoEditando?: Transacao | null;
   onSucesso?: (mensagem: string) => void;
   onErro?: (mensagem: string) => void;
 }
+
+const CATEGORIAS_RECEITA = [
+  'Salário',
+  'Vale Alimentação',
+  'Freelance',
+  'Venda Shopee',
+  'Investimentos',
+  'Bônus',
+  'Outras Receitas'
+];
 
 export default function ModalReceita({
   aberto,
@@ -31,6 +41,7 @@ export default function ModalReceita({
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [pessoa, setPessoa] = useState(usuarioNome);
+  const [categoria, setCategoria] = useState('Salário');
   const [carregando, setCarregando] = useState(false);
 
   useEffect(() => {
@@ -39,11 +50,13 @@ export default function ModalReceita({
       setDescricao(transacaoEditando.descricao);
       setValor(String(transacaoEditando.valor));
       setPessoa(transacaoEditando.pessoa);
+      setCategoria(transacaoEditando.categoria || 'Salário');
     } else if (!modoEdicao) {
       setData('');
       setDescricao('');
       setValor('');
       setPessoa(usuarioNome);
+      setCategoria('Salário');
     }
   }, [transacaoEditando, modoEdicao, aberto]);
 
@@ -70,7 +83,8 @@ export default function ModalReceita({
         const transacaoAtualizada: Transacao = {
           ...transacaoEditando,
           data,
-          descricao: descricao || 'Receita',
+          categoria,
+          descricao: descricao || categoria,
           valor: valorNumerico,
           pessoa
         };
@@ -114,8 +128,8 @@ export default function ModalReceita({
       const receita: Transacao = {
         id: gerarId(),
         data,
-        categoria: 'Renda',
-        descricao: descricao || 'Receita',
+        categoria,
+        descricao: descricao || categoria,
         valor: valorNumerico,
         pessoa,
         tipo: 'renda',
@@ -132,7 +146,7 @@ export default function ModalReceita({
       await set(dbRef, [...existentes, receita]);
 
       onSucesso?.('Receita cadastrada com sucesso!');
-      setData(''); setDescricao(''); setValor(''); setPessoa(usuarioNome);
+      setData(''); setDescricao(''); setValor(''); setPessoa(usuarioNome); setCategoria('Salário');
       onFechar();
 
     } catch (error) {
@@ -182,6 +196,16 @@ export default function ModalReceita({
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Categoria</label>
+            <select value={categoria} onChange={e => setCategoria(e.target.value)}
+              style={{ width: '100%', padding: '0.625rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
+              {CATEGORIAS_RECEITA.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+
+          <div style={{ marginBottom: '1rem' }}>
             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Pessoa</label>
             <select value={pessoa} onChange={e => setPessoa(e.target.value)}
               style={{ width: '100%', padding: '0.625rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem' }}>
@@ -191,8 +215,8 @@ export default function ModalReceita({
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
-            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Descrição</label>
-            <input type="text" placeholder="Ex: Salário, Freelance..." value={descricao} onChange={e => setDescricao(e.target.value)}
+            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', color: '#374151', marginBottom: '0.5rem' }}>Descrição (opcional)</label>
+            <input type="text" placeholder={`Ex: ${categoria} de Março`} value={descricao} onChange={e => setDescricao(e.target.value)}
               style={{ width: '100%', padding: '0.625rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem' }} />
           </div>
 

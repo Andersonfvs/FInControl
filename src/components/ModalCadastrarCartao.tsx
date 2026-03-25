@@ -10,7 +10,7 @@ interface Props {
   onSalvar: (cartao: CartaoCredito) => void;
 }
 
-const CORES_CARTAO = [
+const CORES = [
   { nome: 'Azul', hex: '#06b6d4' },
   { nome: 'Verde', hex: '#10b981' },
   { nome: 'Roxo', hex: '#8b5cf6' },
@@ -18,233 +18,331 @@ const CORES_CARTAO = [
   { nome: 'Laranja', hex: '#f59e0b' },
   { nome: 'Vermelho', hex: '#ef4444' },
   { nome: 'Cinza', hex: '#6b7280' },
-  { nome: 'Preto', hex: '#1f2937' }
+  { nome: 'Preto', hex: '#1f2937' },
 ];
+
+const BANDEIRAS = ['Mastercard', 'Visa', 'Elo', 'American Express', 'Hipercard', 'Outros'];
 
 export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Props) {
   const [nome, setNome] = useState('');
-  const [bandeira, setBandeira] = useState<'Visa' | 'Mastercard' | 'Elo' | 'Amex' | 'Outro'>('Visa');
+  const [bandeira, setBandeira] = useState('Mastercard');
   const [limite, setLimite] = useState('');
   const [diaFechamento, setDiaFechamento] = useState('');
   const [diaVencimento, setDiaVencimento] = useState('');
-  const [cor, setCor] = useState('#06b6d4');
-  const [salvando, setSalvando] = useState(false);
+  const [cor, setCor] = useState('#8b5cf6');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSalvando(true);
-
-    try {
-      const novoCartao: CartaoCredito = {
-        id: gerarId(),
-        nome,
-        bandeira,
-        limite: parseFloat(limite),
-        diaFechamento: parseInt(diaFechamento),
-        diaVencimento: parseInt(diaVencimento),
-        cor,
-        ativo: true
-      };
-
-      onSalvar(novoCartao);
-      
-      // Resetar formulário
-      setNome('');
-      setBandeira('Visa');
-      setLimite('');
-      setDiaFechamento('');
-      setDiaVencimento('');
-      setCor('#06b6d4');
-      onFechar();
-    } catch (error) {
-      console.error('Erro ao cadastrar cartão:', error);
-      alert('❌ Erro ao cadastrar cartão. Tente novamente.');
-    } finally {
-      setSalvando(false);
+  const handleSalvar = () => {
+    if (!nome || !limite || !diaFechamento || !diaVencimento) {
+      alert('Preencha todos os campos!');
+      return;
     }
+
+    const cartao: CartaoCredito = {
+      id: gerarId(),
+      nome: nome.trim(),
+      bandeira,
+      limite: parseFloat(limite),
+      diaFechamento: parseInt(diaFechamento),
+      diaVencimento: parseInt(diaVencimento),
+      cor,
+    };
+
+    onSalvar(cartao);
+    
+    // Limpar formulário
+    setNome('');
+    setBandeira('Mastercard');
+    setLimite('');
+    setDiaFechamento('');
+    setDiaVencimento('');
+    setCor('#8b5cf6');
+    onFechar();
   };
 
   if (!aberto) return null;
 
   return (
-    <div style={{
-      position: 'fixed',
-      inset: 0,
-      background: 'rgba(0,0,0,0.5)',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      zIndex: 1000
-    }}>
-      <div style={{
-        background: 'white',
-        borderRadius: '0.75rem',
-        padding: '2rem',
-        width: '90%',
-        maxWidth: '500px',
-        boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)'
-      }}>
+    <div
+      onClick={onFechar}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1000,
+        padding: '1rem',
+        overflowY: 'auto', // ADICIONADO
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: 'white',
+          borderRadius: '1rem',
+          width: '100%',
+          maxWidth: '500px',
+          maxHeight: '90vh', // ADICIONADO
+          overflowY: 'auto', // ADICIONADO
+          padding: '1.5rem',
+          margin: 'auto', // ADICIONADO
+        }}
+      >
+        {/* Header */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           marginBottom: '1.5rem'
         }}>
-          <h3 style={{ fontSize: '1.5rem', fontWeight: '700' }}>
+          <h3 style={{
+            fontSize: '1.25rem',
+            fontWeight: '700',
+            color: '#111827',
+            margin: 0
+          }}>
             💳 Cadastrar Cartão
           </h3>
           <button
             onClick={onFechar}
             style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
+              background: 'none',
               border: 'none',
-              background: '#f3f4f6',
+              fontSize: '1.5rem',
               cursor: 'pointer',
-              fontSize: '1.25rem'
+              color: '#6b7280'
             }}
           >
             ✕
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          {/* Preview do Cartão */}
-          <div style={{
+        {/* Preview do cartão */}
+        <div
+          style={{
             background: cor,
+            borderRadius: '1rem',
             padding: '1.5rem',
-            borderRadius: '0.75rem',
+            marginBottom: '1.5rem',
             color: 'white',
             minHeight: '140px',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between'
+            justifyContent: 'space-between',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
+          }}
+        >
+          <div style={{
+            fontSize: '0.875rem',
+            opacity: 0.9
           }}>
-            <div>
-              <div style={{ fontSize: '0.75rem', opacity: 0.9, marginBottom: '0.5rem' }}>
-                {bandeira}
-              </div>
-              <div style={{ fontSize: '1.25rem', fontWeight: '700' }}>
-                {nome || 'Nome do Cartão'}
-              </div>
+            {bandeira}
+          </div>
+          <div>
+            <div style={{
+              fontSize: '1.25rem',
+              fontWeight: '700',
+              marginBottom: '0.5rem'
+            }}>
+              {nome || 'Nome do Cartão'}
             </div>
-            <div style={{ fontSize: '0.75rem', opacity: 0.9 }}>
+            <div style={{
+              fontSize: '0.875rem',
+              opacity: 0.9
+            }}>
               Limite: R$ {limite || '0,00'}
             </div>
           </div>
+        </div>
 
+        {/* Formulário */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          {/* Nome */}
           <div>
-            <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            <label style={{
+              display: 'block',
+              fontWeight: '600',
+              marginBottom: '0.5rem',
+              fontSize: '0.875rem',
+              color: '#374151'
+            }}>
               Nome do Cartão
             </label>
             <input
               type="text"
               value={nome}
               onChange={(e) => setNome(e.target.value)}
-              placeholder="Ex: Nubank Roxinho"
-              required
-              disabled={salvando}
-              style={{ width: '100%' }}
+              placeholder="Ex: Nubank, Inter, C6..."
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #e5e7eb',
+                borderRadius: '0.5rem',
+                fontSize: '0.9375rem',
+                boxSizing: 'border-box'
+              }}
             />
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* Bandeira e Limite */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '1rem'
+          }}>
             <div>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              <label style={{
+                display: 'block',
+                fontWeight: '600',
+                marginBottom: '0.5rem',
+                fontSize: '0.875rem',
+                color: '#374151'
+              }}>
                 Bandeira
               </label>
               <select
                 value={bandeira}
-                onChange={(e) => setBandeira(e.target.value as any)}
-                disabled={salvando}
-                style={{ width: '100%' }}
+                onChange={(e) => setBandeira(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  boxSizing: 'border-box'
+                }}
               >
-                <option value="Visa">Visa</option>
-                <option value="Mastercard">Mastercard</option>
-                <option value="Elo">Elo</option>
-                <option value="Amex">Amex</option>
-                <option value="Outro">Outro</option>
+                {BANDEIRAS.map(b => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
               </select>
             </div>
 
             <div>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              <label style={{
+                display: 'block',
+                fontWeight: '600',
+                marginBottom: '0.5rem',
+                fontSize: '0.875rem',
+                color: '#374151'
+              }}>
                 Limite (R$)
               </label>
               <input
                 type="number"
                 value={limite}
                 onChange={(e) => setLimite(e.target.value)}
-                placeholder="0,00"
-                step="0.01"
-                required
-                disabled={salvando}
-                style={{ width: '100%' }}
+                placeholder="5000"
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  boxSizing: 'border-box'
+                }}
               />
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+          {/* Dia Fechamento e Vencimento */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '1rem'
+          }}>
             <div>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              <label style={{
+                display: 'block',
+                fontWeight: '600',
+                marginBottom: '0.5rem',
+                fontSize: '0.875rem',
+                color: '#374151'
+              }}>
                 Dia Fechamento
               </label>
               <input
                 type="number"
-                value={diaFechamento}
-                onChange={(e) => setDiaFechamento(e.target.value)}
-                placeholder="Ex: 10"
                 min="1"
                 max="31"
-                required
-                disabled={salvando}
-                style={{ width: '100%' }}
+                value={diaFechamento}
+                onChange={(e) => setDiaFechamento(e.target.value)}
+                placeholder="01"
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  boxSizing: 'border-box'
+                }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+              <label style={{
+                display: 'block',
+                fontWeight: '600',
+                marginBottom: '0.5rem',
+                fontSize: '0.875rem',
+                color: '#374151'
+              }}>
                 Dia Vencimento
               </label>
               <input
                 type="number"
-                value={diaVencimento}
-                onChange={(e) => setDiaVencimento(e.target.value)}
-                placeholder="Ex: 17"
                 min="1"
                 max="31"
-                required
-                disabled={salvando}
-                style={{ width: '100%' }}
+                value={diaVencimento}
+                onChange={(e) => setDiaVencimento(e.target.value)}
+                placeholder="10"
+                style={{
+                  width: '100%',
+                  padding: '0.75rem',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '0.5rem',
+                  fontSize: '0.9375rem',
+                  boxSizing: 'border-box'
+                }}
               />
             </div>
           </div>
 
+          {/* Cor do Cartão */}
           <div>
-            <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem', fontSize: '0.875rem' }}>
+            <label style={{
+              display: 'block',
+              fontWeight: '600',
+              marginBottom: '0.5rem',
+              fontSize: '0.875rem',
+              color: '#374151'
+            }}>
               Cor do Cartão
             </label>
-            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              {CORES_CARTAO.map(c => (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: '0.5rem'
+            }}>
+              {CORES.map((c) => (
                 <button
                   key={c.hex}
-                  type="button"
                   onClick={() => setCor(c.hex)}
                   style={{
-                    width: '48px',
-                    height: '48px',
-                    borderRadius: '0.5rem',
+                    width: '100%',
+                    height: '50px',
                     background: c.hex,
-                    border: cor === c.hex ? '3px solid #374151' : '2px solid #e5e7eb',
+                    border: cor === c.hex ? '3px solid #000' : 'none',
+                    borderRadius: '0.5rem',
                     cursor: 'pointer',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: 'white',
+                    fontWeight: '600',
                     fontSize: '1.25rem'
                   }}
-                  title={c.nome}
                 >
                   {cor === c.hex && '✓'}
                 </button>
@@ -252,24 +350,44 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             </div>
           </div>
 
-          <button
-            type="submit"
-            disabled={salvando}
-            style={{
-              padding: '1rem',
-              background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '0.75rem',
-              fontWeight: '600',
-              cursor: salvando ? 'not-allowed' : 'pointer',
-              opacity: salvando ? 0.5 : 1,
-              marginTop: '0.5rem'
-            }}
-          >
-            {salvando ? 'Cadastrando...' : 'Cadastrar Cartão'}
-          </button>
-        </form>
+          {/* Botões */}
+          <div style={{
+            display: 'flex',
+            gap: '0.75rem',
+            marginTop: '0.5rem'
+          }}>
+            <button
+              onClick={onFechar}
+              style={{
+                flex: 1,
+                padding: '0.875rem',
+                background: '#f3f4f6',
+                color: '#374151',
+                border: 'none',
+                borderRadius: '0.5rem',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleSalvar}
+              style={{
+                flex: 1,
+                padding: '0.875rem',
+                background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '0.5rem',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              💾 Salvar Cartão
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

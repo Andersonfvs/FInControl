@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 
@@ -12,6 +12,21 @@ export default function LoginPage() {
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [carregando, setCarregando] = useState(false);
+  const [verificandoSessao, setVerificandoSessao] = useState(true); // NOVO
+
+  // NOVO: Verifica se já está logado antes de mostrar tela de login
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        console.log('✅ Já estava logado! Redirecionando...');
+        router.push('/dashboard');
+      } else {
+        console.log('❌ Não está logado, mostrando tela de login');
+        setVerificandoSessao(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,6 +51,34 @@ export default function LoginPage() {
       setCarregando(false);
     }
   };
+
+  // NOVO: Mostra loading enquanto verifica sessão
+  if (verificandoSessao) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: '#fafafa'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <div style={{
+            width: '40px',
+            height: '40px',
+            border: '3px solid #e5e7eb',
+            borderTop: '3px solid #10b981',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+            margin: '0 auto 1rem'
+          }}></div>
+          <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>
+            Verificando sessão...
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -160,7 +203,7 @@ export default function LoginPage() {
           padding: 3rem;
           display: flex;
           flex-direction: column;
-          justifycontent: center;
+          justify-content: center;
           color: white;
         }
 
