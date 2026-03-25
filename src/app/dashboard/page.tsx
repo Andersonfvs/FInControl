@@ -21,6 +21,7 @@ import GraficoEvolucao from '@/components/GraficoEvolucao';
 import GestaoCategorias from '@/components/GestaoCategorias';
 import InsightsInteligentes from '@/components/InsightsInteligentes';
 import AlertaFaturas from '@/components/AlertaFaturas';
+import AtalhosRapidos from '@/components/AtalhosRapidos';
 
 type ToastTipo = 'sucesso' | 'erro' | 'aviso' | 'info';
 
@@ -46,6 +47,10 @@ export default function DashboardPage() {
   const [modalCompraAberto, setModalCompraAberto] = useState(false);
   const [cartaoSelecionadoId, setCartaoSelecionadoId] = useState('');
   const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
+
+  // NOVO: Atalhos Rápidos
+  const [categoriaPreenchida, setCategoriaPreenchida] = useState('');
+  const [descricaoPreenchida, setDescricaoPreenchida] = useState('');
 
   // NOVO: dados pré-preenchidos via Input Mágico / QR Code
   const [dadosIniciais, setDadosIniciais] = useState<DadosInputMagico | null>(null);
@@ -98,10 +103,12 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [usuario]);
 
-  // Handlers — iguais ao original
+  // Handlers
   const handleEditar = (transacao: Transacao) => {
     setTransacaoEditando(transacao);
     setDadosIniciais(null);
+    setCategoriaPreenchida('');
+    setDescricaoPreenchida('');
     if (transacao.tipo === 'despesa') setModalDespesaAberto(true);
     else setModalReceitaAberto(true);
   };
@@ -110,6 +117,8 @@ export default function DashboardPage() {
     setModalDespesaAberto(false);
     setTransacaoEditando(null);
     setDadosIniciais(null);
+    setCategoriaPreenchida('');
+    setDescricaoPreenchida('');
   };
 
   const handleFecharReceita = () => {
@@ -122,6 +131,8 @@ export default function DashboardPage() {
   const handleInputMagico = useCallback((dados: DadosInputMagico) => {
     setDadosIniciais(dados);
     setTransacaoEditando(null);
+    setCategoriaPreenchida('');
+    setDescricaoPreenchida('');
     if (dados.tipo === 'renda') setModalReceitaAberto(true);
     else setModalDespesaAberto(true);
   }, []);
@@ -211,6 +222,22 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
   };
 
+  // NOVO: Calcular saldo do Vale Alimentação
+  const calcularSaldoVale = () => {
+    const mesKey = gerarMesKey(dataReferencia);
+    const transacoes = sistema.dadosPorMes[mesKey] || [];
+    
+    const receitasVale = transacoes
+      .filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação')
+      .reduce((acc, t) => acc + t.valor, 0);
+    
+    const despesasVale = transacoes
+      .filter(t => t.tipo === 'despesa' && (t as any).metodoPagamento === 'vale_alimentacao')
+      .reduce((acc, t) => acc + t.valor, 0);
+    
+    return receitasVale - despesasVale;
+  };
+
   if (carregando) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#fafafa' }}>
       <div style={{ textAlign: 'center' }}>
@@ -230,6 +257,7 @@ export default function DashboardPage() {
   const resumo = calcularResumo(transacoes, filtro);
   const transacoesFiltradas = filtro === 'todos' ? transacoes : transacoes.filter(t => t.pessoa.toLowerCase() === filtro.toLowerCase());
   const cartaoSelecionado = sistema.cartoes.find(c => c.id === cartaoSelecionadoId);
+  const saldoVale = calcularSaldoVale();
 
   const calcularCategorias = (): CategoriaTotal[] => {
     const cats: { [k: string]: number } = {};
@@ -273,13 +301,13 @@ export default function DashboardPage() {
             </div>
             <div style={{ display: 'flex', gap: '0.5rem' }}>
               <button
-                onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setModalReceitaAberto(true); }}
+                onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalReceitaAberto(true); }}
                 style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}
               >
                 {isMobile ? '+ 💰' : '+ Receita'}
               </button>
               <button
-                onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setModalDespesaAberto(true); }}
+                onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
                 style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}
               >
                 {isMobile ? '+ 💸' : '+ Despesa'}
@@ -329,7 +357,8 @@ export default function DashboardPage() {
           {/* Dashboard */}
           {tabAtiva === 'dashboard' && (
             <div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              {/* Cards de resumo */}
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
                   <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700', color: '#10b981' }}>{formatarMoeda(resumo.totalReceitas)}</div>
@@ -343,7 +372,23 @@ export default function DashboardPage() {
                   <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>💵 Disponível</div>
                   <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
                 </div>
+                {/* NOVO: Card Vale Alimentação */}
+                <div style={{ background: saldoVale >= 0 ? '#8b5cf6' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white' }}>
+                  <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>🎫 Vale Alimentação</div>
+                  <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(saldoVale)}</div>
+                </div>
               </div>
+
+              {/* NOVO: Atalhos Rápidos */}
+              <AtalhosRapidos
+                onAtalhoClick={(cat, desc) => {
+                  setCategoriaPreenchida(cat);
+                  setDescricaoPreenchida(desc);
+                  setTransacaoEditando(null);
+                  setDadosIniciais(null);
+                  setModalDespesaAberto(true);
+                }}
+              />
 
               <AlertaFaturas cartoes={sistema.cartoes} faturas={sistema.faturas} />
               <InsightsInteligentes transacoesAtual={transacoes} transacoesAnterior={transacoesAnterior} />
@@ -374,7 +419,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ATUALIZADO: ListaTransacoes com novos props */}
           {tabAtiva === 'transacoes' && (
             <ListaTransacoes
               transacoes={transacoesFiltradas}
@@ -411,17 +455,13 @@ export default function DashboardPage() {
         onErro={msg => showToast(msg, 'erro')}
       />
 
-      {/* ATUALIZADO: ModalDespesa com dadosIniciais */}
+      {/* ATUALIZADO: ModalDespesa com props dos atalhos */}
       <ModalDespesa
         aberto={modalDespesaAberto}
         onFechar={handleFecharDespesa}
-        usuarioNome={usuario.nome}
         userId={usuario.uid}
-        categorias={sistema.categoriasCustomizadas || []}
-        transacaoEditando={transacaoEditando?.tipo === 'despesa' ? transacaoEditando : null}
-        dadosIniciais={dadosIniciais?.tipo === 'despesa' ? dadosIniciais : null}
-        onSucesso={msg => showToast(msg, 'sucesso')}
-        onErro={msg => showToast(msg, 'erro')}
+        categoriaPreenchida={categoriaPreenchida}
+        descricaoPreenchida={descricaoPreenchida}
       />
 
       <ModalCadastrarCartao aberto={modalCartaoAberto} onFechar={() => setModalCartaoAberto(false)} onSalvar={handleCadastrarCartao} />

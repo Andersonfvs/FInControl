@@ -142,3 +142,26 @@ export function parsearInputMagico(input: string, usuarioNome: string): DadosInp
 
   return { valor, descricao: descricaoFinal, data, pessoa, categoria, tipo };
 }
+
+// ─────────────────────────────────────────────────────────────
+// CATEGORIAS DISPONÍVEIS
+// ─────────────────────────────────────────────────────────────
+
+export function obterCategoriasDisponiveis(): string[] {
+  return [
+    'Alimentação',
+    'Transporte',
+    'Moradia',
+    'Saúde',
+    'Lazer',
+    'Educação',
+    'Vestuário',
+    'Serviços',
+    'Investimentos',
+    'Outras Despesas'
+  ];
+}
+
+export function obterEmoji(categoria: string): string {
+  return obterIconeCategoria(categoria);
+}
