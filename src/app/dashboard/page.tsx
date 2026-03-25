@@ -59,8 +59,10 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // Auth
+  // Auth - CORRIGIDO COM TIMEOUT
   useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         const email = user.email?.toLowerCase().trim() || '';
@@ -73,12 +75,19 @@ export default function DashboardPage() {
         }
         
         setUsuario({ uid: user.uid, nome, email: user.email || '' });
+        setCarregando(false);
       } else {
-        router.push('/');
+        // ESPERA 1 SEGUNDO antes de redirecionar
+        timeoutId = setTimeout(() => {
+          router.push('/');
+        }, 1000);
       }
-      setCarregando(false);
     });
-    return () => unsubscribe();
+    
+    return () => {
+      unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
   }, [router]);
 
   // Firebase
@@ -125,14 +134,12 @@ export default function DashboardPage() {
     setDadosIniciais(null);
   };
 
-  // Input Mágico - ATUALIZADO
+  // Input Mágico
   const handleInputMagico = useCallback(async (dados: DadosInputMagico) => {
     if (!usuario) return;
     
     try {
-      // Se for crédito (cartão) e tiver cartão identificado
       if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
-        // Adicionar na fatura do cartão
         const item: ItemFatura = {
           id: gerarId(),
           cartaoId: dados.cartaoId,
@@ -167,12 +174,10 @@ export default function DashboardPage() {
         await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
         showToast(`💳 ${dados.descricao} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
       } 
-      // Se for crédito mas não tem cartão identificado
       else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
         showToast('❌ Cartão não encontrado. Cadastre o cartão primeiro!', 'erro');
         return;
       }
-      // Se for débito (dinheiro) - adiciona como transação normal
       else {
         const novaTransacao: Transacao = {
           id: gerarId(),
@@ -433,12 +438,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              {/* ATUALIZADO: InputMagico com cartões */}
-              <InputMagico 
-                usuarioNome={usuario.nome} 
-                cartoes={sistema.cartoes}
-                onTransacaoCriada={handleInputMagico} 
-              />
+              <InputMagico usuarioNome={usuario.nome} cartoes={sistema.cartoes} onTransacaoCriada={handleInputMagico} />
 
               <AtalhosRapidos
                 userId={usuario.uid}
@@ -510,28 +510,10 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      <ModalReceita
-        aberto={modalReceitaAberto}
-        onFechar={handleFecharReceita}
-        usuarioNome={usuario.nome}
-        userId={usuario.uid}
-        transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null}
-        onSucesso={msg => showToast(msg, 'sucesso')}
-        onErro={msg => showToast(msg, 'erro')}
-      />
-
-      <ModalDespesa
-        aberto={modalDespesaAberto}
-        onFechar={handleFecharDespesa}
-        userId={usuario.uid}
-        categoriaPreenchida={categoriaPreenchida}
-        descricaoPreenchida={descricaoPreenchida}
-      />
-
+      <ModalReceita aberto={modalReceitaAberto} onFechar={handleFecharReceita} usuarioNome={usuario.nome} userId={usuario.uid} transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null} onSucesso={msg => showToast(msg, 'sucesso')} onErro={msg => showToast(msg, 'erro')} />
+      <ModalDespesa aberto={modalDespesaAberto} onFechar={handleFecharDespesa} userId={usuario.uid} categoriaPreenchida={categoriaPreenchida} descricaoPreenchida={descricaoPreenchida} />
       <ModalCadastrarCartao aberto={modalCartaoAberto} onFechar={() => setModalCartaoAberto(false)} onSalvar={handleCadastrarCartao} />
-      {cartaoSelecionado && (
-        <ModalCompraCartao aberto={modalCompraAberto} cartaoId={cartaoSelecionado.id} cartaoNome={cartaoSelecionado.nome} onFechar={() => { setModalCompraAberto(false); setCartaoSelecionadoId(''); }} onSalvar={handleAdicionarCompra} usuarioNome={usuario.nome} />
-      )}
+      {cartaoSelecionado && <ModalCompraCartao aberto={modalCompraAberto} cartaoId={cartaoSelecionado.id} cartaoNome={cartaoSelecionado.nome} onFechar={() => { setModalCompraAberto(false); setCartaoSelecionadoId(''); }} onSalvar={handleAdicionarCompra} usuarioNome={usuario.nome} />}
 
       <Toast mensagem={toast.mensagem} tipo={toast.tipo} visivel={toast.visivel} onFechar={fecharToast} />
 

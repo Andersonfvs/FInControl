@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { CartaoCredito } from '@/types';
 import { gerarId } from '@/utils/financeiro';
 
@@ -30,6 +30,17 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
   const [diaFechamento, setDiaFechamento] = useState('');
   const [diaVencimento, setDiaVencimento] = useState('');
   const [cor, setCor] = useState('#8b5cf6');
+
+  // CORREÇÃO 1: ESC FECHA O MODAL
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onFechar();
+    };
+    if (aberto) {
+      window.addEventListener('keydown', handleEsc);
+    }
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [aberto, onFechar]);
 
   const handleSalvar = () => {
     if (!nome || !limite || !diaFechamento || !diaVencimento) {
@@ -61,6 +72,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
   if (!aberto) return null;
 
   return (
+    // CORREÇÃO 2: SCROLL AQUI, SEM FLEX
     <div
       onClick={onFechar}
       style={{
@@ -70,14 +82,12 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
         right: 0,
         bottom: 0,
         background: 'rgba(0,0,0,0.5)',
-        display: 'flex',
-        alignItems: 'flex-start',
-        justifyContent: 'center',
         zIndex: 1000,
         overflow: 'auto',
         padding: '40px 20px',
       }}
     >
+      {/* CORREÇÃO 3: SEM MAXHEIGHT */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
