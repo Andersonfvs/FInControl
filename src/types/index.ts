@@ -37,6 +37,11 @@ export interface ItemFatura {
   pessoa: string;
   parcelas: number;
   parcelaAtual: number;
+  // Campo para exibir parcelamento (ex: 1/3, 2/3...)
+  parcelamento?: {
+    parcelaAtual: number;
+    totalParcelas: number;
+  };
 }
 
 export interface Fatura {
@@ -47,6 +52,9 @@ export interface Fatura {
   paga: boolean;
   dataPagamento?: string;
 }
+
+// Alias para compatibilidade com componentes que usam FaturaMensal
+export type FaturaMensal = Fatura;
 
 export interface Meta {
   id: string;

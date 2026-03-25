@@ -17,7 +17,7 @@ const MAPA_ICONES: { palavras: string[]; icone: string }[] = [
   { palavras: ['salário', 'salario', 'renda', 'receita', 'freelance', 'freela', 'trabalho', 'pagamento recebido'], icone: '💰' },
   { palavras: ['academia', 'ginásio', 'ginasio', 'fitness', 'musculação', 'musculacao'], icone: '🏋️' },
   { palavras: ['pet', 'veterinário', 'veterinario', 'animal', 'cachorro', 'gato', 'ração', 'racao'], icone: '🐾' },
-  { palavras: ['presente', 'gift', 'presente'], icone: '🎁' },
+  { palavras: ['presente', 'gift'], icone: '🎁' },
   { palavras: ['beleza', 'cabelo', 'salão', 'salao', 'manicure', 'estética', 'estetica'], icone: '✂️' },
 ];
 
@@ -50,6 +50,8 @@ export interface DadosInputMagico {
   cartaoId?: string;
   cartaoNome?: string;
   pago: boolean;
+  // Número de parcelas — ex: "3x" → parcelas: 3
+  parcelas?: number;
 }
 
 const MAPA_CATEGORIAS_PALAVRAS: { palavras: string[]; categoria: string }[] = [
@@ -139,14 +141,26 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
     resto = resto.replace(/receita|renda|salario|salário/g, '').trim();
   }
 
-  // ── 5. Detectar método de pagamento ───────────────────────
+  // ── 5. Extrair PARCELAS — ex: "3x", "12x" ─────────────────
+  let parcelas: number | undefined;
+  const regexParcelas = /(\d+)\s*x\b/;
+  const matchParcelas = resto.match(regexParcelas);
+  if (matchParcelas) {
+    const n = parseInt(matchParcelas[1]);
+    if (n > 1 && n <= 72) {
+      parcelas = n;
+    }
+    resto = resto.replace(matchParcelas[0], '').trim();
+  }
+
+  // ── 6. Detectar método de pagamento ───────────────────────
   let metodoPagamento: 'dinheiro' | 'cartao' = 'dinheiro';
   let cartaoId: string | undefined;
   let cartaoNome: string | undefined;
   let pago = true; // Padrão: débito é pago na hora
 
   const temCredito = resto.includes('credito') || resto.includes('crédito') || resto.includes('cartao') || resto.includes('cartão');
-  
+
   if (temCredito) {
     metodoPagamento = 'cartao';
     pago = false; // Crédito não é pago ainda (vai pra fatura)
@@ -157,11 +171,11 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
       if (resto.includes(palavra)) {
         cartaoNome = nomeCartao;
         resto = resto.replace(palavra, '').trim();
-        
+
         // Buscar ID do cartão se disponível
         if (cartoesDisponiveis) {
-          const cartaoEncontrado = cartoesDisponiveis.find(c => 
-            c.nome.toLowerCase().includes(palavra) || 
+          const cartaoEncontrado = cartoesDisponiveis.find(c =>
+            c.nome.toLowerCase().includes(palavra) ||
             nomeCartao.toLowerCase().includes(c.nome.toLowerCase())
           );
           if (cartaoEncontrado) {
@@ -174,23 +188,28 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
     }
   }
 
+  // Se tem parcelas mas não detectou crédito, assume crédito
+  if (parcelas && parcelas > 1 && metodoPagamento === 'dinheiro') {
+    metodoPagamento = 'cartao';
+    pago = false;
+  }
+
   const temDebito = resto.includes('debito') || resto.includes('débito');
   if (temDebito) {
     resto = resto.replace(/debito|débito/g, '').trim();
     pago = true;
   }
 
-  // ── 6. Detectar tipo (renda ou despesa) ───────────────────
+  // ── 7. Detectar tipo (renda ou despesa) ───────────────────
   let tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
 
-  // Se for Shopee E tiver "receita", é venda
   if (resto.includes('shopee') && forcaReceita) {
     tipo = 'renda';
   }
 
-  // ── 7. Detectar categoria ─────────────────────────────────
+  // ── 8. Detectar categoria ─────────────────────────────────
   let categoria = tipo === 'renda' ? 'Outras Receitas' : 'Outras Despesas';
-  
+
   if (tipo === 'renda') {
     if (resto.includes('salario') || resto.includes('salário')) categoria = 'Salário';
     else if (resto.includes('vale')) categoria = 'Vale Alimentação';
@@ -205,7 +224,7 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
     }
   }
 
-  // ── 8. Extrair descrição ──────────────────────────────────
+  // ── 9. Extrair descrição ──────────────────────────────────
   const IGNORAR = new Set(['de', 'do', 'da', 'dos', 'das', 'no', 'na', 'nos', 'nas', 'em', 'a', 'o', 'e', 'r$', 'reais', 'real', 'pra', 'pro', 'para', 'com', 'um', 'uma']);
   const palavrasResto = resto
     .replace(/[^\w\s]/g, '')
@@ -227,7 +246,8 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
     metodoPagamento,
     cartaoId,
     cartaoNome,
-    pago
+    pago,
+    parcelas,
   };
 }
 
@@ -246,7 +266,7 @@ export function obterCategoriasDisponiveis(): string[] {
     'Vestuário',
     'Serviços',
     'Investimentos',
-    'Outras Despesas'
+    'Outras Despesas',
   ];
 }
 

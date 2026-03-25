@@ -35,7 +35,7 @@ export default function DashboardPage() {
   const [sistema, setSistema] = useState<SistemaFinanceiro>({
     dadosPorMes: {}, pessoasCadastradas: [], metas: [],
     reservaEmergencia: { transacoes: [], taxaCDIAnual: 14.9 },
-    cartoes: [], faturas: {}, categoriasCustomizadas: []
+    cartoes: [], faturas: {}, categoriasCustomizadas: [],
   });
   const [dataReferencia, setDataReferencia] = useState(new Date());
   const [filtro, setFiltro] = useState('todos');
@@ -49,6 +49,9 @@ export default function DashboardPage() {
   const [cartaoSelecionadoId, setCartaoSelecionadoId] = useState('');
   const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
 
+  // Edição de cartão
+  const [cartaoEditando, setCartaoEditando] = useState<CartaoCredito | null>(null);
+
   // Atalhos Rápidos
   const [categoriaPreenchida, setCategoriaPreenchida] = useState('');
   const [descricaoPreenchida, setDescricaoPreenchida] = useState('');
@@ -59,35 +62,22 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // Auth - CORRIGIDO COM TIMEOUT
+  // Auth com timeout
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
-    
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         const email = user.email?.toLowerCase().trim() || '';
         let nome = 'Usuário';
-        
-        if (email === 'andersonfvsti@gmail.com') {
-          nome = 'Anderson Ferreira';
-        } else if (email === 'evelinmulbaier@gmail.com') {
-          nome = 'Evelin Mulbaier';
-        }
-        
+        if (email === 'andersonfvsti@gmail.com') nome = 'Anderson Ferreira';
+        else if (email === 'evelinmulbaier@gmail.com') nome = 'Evelin Mulbaier';
         setUsuario({ uid: user.uid, nome, email: user.email || '' });
         setCarregando(false);
       } else {
-        // ESPERA 1 SEGUNDO antes de redirecionar
-        timeoutId = setTimeout(() => {
-          router.push('/');
-        }, 1000);
+        timeoutId = setTimeout(() => router.push('/'), 1000);
       }
     });
-    
-    return () => {
-      unsubscribe();
-      if (timeoutId) clearTimeout(timeoutId);
-    };
+    return () => { unsubscribe(); if (timeoutId) clearTimeout(timeoutId); };
   }, [router]);
 
   // Firebase
@@ -101,16 +91,29 @@ export default function DashboardPage() {
       let precisaMigrar = false;
       const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
       for (const mesKey in dadosPorMesOriginal) {
-        const lista: any[] = Array.isArray(dadosPorMesOriginal[mesKey]) ? dadosPorMesOriginal[mesKey] : Object.values(dadosPorMesOriginal[mesKey] || {});
-        dadosPorMesMigrado[mesKey] = lista.map((t: any) => { if (!t?.id) { precisaMigrar = true; return { ...t, id: gerarId() }; } return t as Transacao; });
+        const lista: any[] = Array.isArray(dadosPorMesOriginal[mesKey])
+          ? dadosPorMesOriginal[mesKey]
+          : Object.values(dadosPorMesOriginal[mesKey] || {});
+        dadosPorMesMigrado[mesKey] = lista.map((t: any) => {
+          if (!t?.id) { precisaMigrar = true; return { ...t, id: gerarId() }; }
+          return t as Transacao;
+        });
       }
       if (precisaMigrar) set(ref(database, `usuarios/${usuario.uid}/dadosPorMes`), dadosPorMesMigrado).catch(console.error);
-      setSistema({ dadosPorMes: dadosPorMesMigrado, pessoasCadastradas: dados.pessoasCadastradas || [], metas: dados.metas || [], reservaEmergencia: dados.reservaEmergencia || { transacoes: [], taxaCDIAnual: 14.9 }, cartoes: dados.cartoes || [], faturas: dados.faturas || {}, categoriasCustomizadas: dados.categoriasCustomizadas || [] });
+      setSistema({
+        dadosPorMes: dadosPorMesMigrado,
+        pessoasCadastradas: dados.pessoasCadastradas || [],
+        metas: dados.metas || [],
+        reservaEmergencia: dados.reservaEmergencia || { transacoes: [], taxaCDIAnual: 14.9 },
+        cartoes: dados.cartoes || [],
+        faturas: dados.faturas || {},
+        categoriasCustomizadas: dados.categoriasCustomizadas || [],
+      });
     });
     return () => unsubscribe();
   }, [usuario]);
 
-  // Handlers
+  // Handlers de transação
   const handleEditar = (transacao: Transacao) => {
     setTransacaoEditando(transacao);
     setDadosIniciais(null);
@@ -134,51 +137,64 @@ export default function DashboardPage() {
     setDadosIniciais(null);
   };
 
-  // Input Mágico
+  // Input Mágico — PARCELAS CORRIGIDAS (distribui entre meses)
   const handleInputMagico = useCallback(async (dados: DadosInputMagico) => {
     if (!usuario) return;
-    
+
     try {
       if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
-        const item: ItemFatura = {
-          id: gerarId(),
-          cartaoId: dados.cartaoId,
-          data: dados.data,
-          descricao: dados.descricao,
-          valor: dados.valor,
-          categoria: dados.categoria,
-          pessoa: dados.pessoa,
-          parcelas: 1,
-          parcelaAtual: 1
-        };
+        const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
+        const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
 
         const novasFaturas = { ...sistema.faturas };
-        const mesKey = gerarMesKey(new Date(dados.data + 'T00:00:00'));
-        
-        if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
-        
-        const existente = novasFaturas[mesKey].find(f => f.cartaoId === dados.cartaoId);
-        if (existente) {
-          existente.itens.push(item);
-          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
-        } else {
-          novasFaturas[mesKey].push({
+
+        for (let i = 0; i < totalParcelas; i++) {
+          // Calcula o mês de cada parcela
+          const dataBase = new Date(dados.data + 'T00:00:00');
+          dataBase.setMonth(dataBase.getMonth() + i);
+          const mesKey = gerarMesKey(dataBase);
+
+          const item: ItemFatura = {
+            id: gerarId(),
             cartaoId: dados.cartaoId,
-            mesReferencia: mesKey,
-            itens: [item],
-            totalFatura: dados.valor,
-            paga: false
-          });
+            data: dataBase.toISOString().split('T')[0],
+            descricao: dados.descricao,
+            valor: valorParcela,
+            categoria: dados.categoria,
+            pessoa: dados.pessoa,
+            parcelas: totalParcelas,
+            parcelaAtual: i + 1,
+            ...(totalParcelas > 1 && {
+              parcelamento: { parcelaAtual: i + 1, totalParcelas },
+            }),
+          };
+
+          if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
+          const existente = novasFaturas[mesKey].find(f => f.cartaoId === dados.cartaoId);
+          if (existente) {
+            existente.itens.push(item);
+            existente.totalFatura = existente.itens.reduce((s, it) => s + it.valor, 0);
+          } else {
+            novasFaturas[mesKey].push({
+              cartaoId: dados.cartaoId,
+              mesReferencia: mesKey,
+              itens: [item],
+              totalFatura: valorParcela,
+              paga: false,
+            });
+          }
         }
-        
+
         await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
-        showToast(`💳 ${dados.descricao} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
-      } 
-      else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
+
+        const textoParcelamento = totalParcelas > 1 ? ` em ${totalParcelas}x de ${formatarMoeda(valorParcela)}` : '';
+        showToast(`💳 ${dados.descricao}${textoParcelamento} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
+
+      } else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
         showToast('❌ Cartão não encontrado. Cadastre o cartão primeiro!', 'erro');
         return;
-      }
-      else {
+
+      } else {
         const novaTransacao: Transacao = {
           id: gerarId(),
           data: dados.data,
@@ -187,7 +203,7 @@ export default function DashboardPage() {
           valor: dados.valor,
           pessoa: dados.pessoa,
           tipo: dados.tipo,
-          pago: dados.pago
+          pago: dados.pago,
         };
 
         const mesKey = gerarMesKey(new Date(dados.data + 'T00:00:00'));
@@ -196,7 +212,7 @@ export default function DashboardPage() {
         const existentes = snapshot.exists()
           ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
           : [];
-        
+
         await set(dbRef, [...existentes, novaTransacao]);
         showToast(`${dados.tipo === 'despesa' ? '💸' : '💰'} ${dados.descricao} adicionada!`, 'sucesso');
       }
@@ -241,12 +257,37 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao duplicar transação', 'erro'); }
   };
 
-  const handleCadastrarCartao = async (cartao: CartaoCredito) => {
+  // Cartões — Cadastrar ou Editar
+  const handleSalvarCartao = async (cartao: CartaoCredito) => {
     if (!usuario) return;
     try {
-      await set(ref(database, `usuarios/${usuario.uid}/cartoes`), [...sistema.cartoes, cartao]);
-      showToast('Cartão cadastrado!', 'sucesso');
-    } catch { showToast('Erro ao cadastrar cartão', 'erro'); }
+      let novosCartoes: CartaoCredito[];
+      if (cartaoEditando) {
+        // Atualiza cartão existente
+        novosCartoes = sistema.cartoes.map(c => c.id === cartao.id ? cartao : c);
+        showToast(`Cartão ${cartao.nome} atualizado!`, 'sucesso');
+      } else {
+        // Adiciona novo cartão
+        novosCartoes = [...sistema.cartoes, cartao];
+        showToast(`Cartão ${cartao.nome} cadastrado!`, 'sucesso');
+      }
+      await set(ref(database, `usuarios/${usuario.uid}/cartoes`), novosCartoes);
+      setCartaoEditando(null);
+    } catch { showToast('Erro ao salvar cartão', 'erro'); }
+  };
+
+  const handleEditarCartao = (cartao: CartaoCredito) => {
+    setCartaoEditando(cartao);
+    setModalCartaoAberto(true);
+  };
+
+  const handleExcluirCartao = async (cartaoId: string) => {
+    if (!usuario) return;
+    try {
+      const novosCartoes = sistema.cartoes.filter(c => c.id !== cartaoId);
+      await set(ref(database, `usuarios/${usuario.uid}/cartoes`), novosCartoes);
+      showToast('Cartão excluído!', 'info');
+    } catch { showToast('Erro ao excluir cartão', 'erro'); }
   };
 
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
@@ -254,14 +295,27 @@ export default function DashboardPage() {
     try {
       const novasFaturas = { ...sistema.faturas };
       const porMes: { [k: string]: ItemFatura[] } = {};
-      itens.forEach(item => { const k = gerarMesKey(new Date(item.data + 'T00:00:00')); if (!porMes[k]) porMes[k] = []; porMes[k].push(item); });
+      itens.forEach(item => {
+        const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
+        if (!porMes[k]) porMes[k] = [];
+        porMes[k].push(item);
+      });
       for (const mesKey in porMes) {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
         const existente = novasFaturas[mesKey].find(f => f.cartaoId === cartaoId);
-        if (existente) { existente.itens.push(...itensDoMes); existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0); }
-        else novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
+        if (existente) {
+          existente.itens.push(...itensDoMes);
+          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
+        } else {
+          novasFaturas[mesKey].push({
+            cartaoId, mesReferencia: mesKey,
+            itens: itensDoMes,
+            totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0),
+            paga: false,
+          });
+        }
       }
       await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
       showToast('Compra adicionada ao cartão!', 'sucesso');
@@ -274,10 +328,22 @@ export default function DashboardPage() {
       const fatura = (sistema.faturas[mesKey] || []).find(f => f.cartaoId === cartaoId);
       const cartao = sistema.cartoes.find(c => c.id === cartaoId);
       if (!fatura || !cartao) { showToast('Fatura ou cartão não encontrado', 'erro'); return; }
-      const despesa: Transacao = { id: gerarId(), data: new Date().toISOString().split('T')[0], categoria: 'Cartão de Crédito', descricao: `Fatura ${cartao.nome}`, valor: fatura.totalFatura, pessoa: usuario.nome, tipo: 'despesa', pago: true, cartaoId };
+      const despesa: Transacao = {
+        id: gerarId(),
+        data: new Date().toISOString().split('T')[0],
+        categoria: 'Cartão de Crédito',
+        descricao: `Fatura ${cartao.nome}`,
+        valor: fatura.totalFatura,
+        pessoa: usuario.nome,
+        tipo: 'despesa',
+        pago: true,
+        cartaoId,
+      };
       await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), [...(sistema.dadosPorMes[mesKey] || []), despesa]);
       const novasFaturas = { ...sistema.faturas };
-      novasFaturas[mesKey] = novasFaturas[mesKey].map(f => f.cartaoId === cartaoId ? { ...f, paga: true, dataPagamento: new Date().toISOString() } : f);
+      novasFaturas[mesKey] = novasFaturas[mesKey].map(f =>
+        f.cartaoId === cartaoId ? { ...f, paga: true, dataPagamento: new Date().toISOString() } : f
+      );
       await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
       showToast(`Fatura de ${formatarMoeda(fatura.totalFatura)} paga!`, 'sucesso');
     } catch { showToast('Erro ao pagar fatura', 'erro'); }
@@ -294,15 +360,12 @@ export default function DashboardPage() {
   const calcularSaldoVale = () => {
     const mesKey = gerarMesKey(dataReferencia);
     const transacoes = sistema.dadosPorMes[mesKey] || [];
-    
     const receitasVale = transacoes
       .filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação')
       .reduce((acc, t) => acc + t.valor, 0);
-    
     const despesasVale = transacoes
       .filter(t => t.tipo === 'despesa' && (t as any).metodoPagamento === 'vale_alimentacao')
       .reduce((acc, t) => acc + t.valor, 0);
-    
     return receitasVale - despesasVale;
   };
 
@@ -326,6 +389,11 @@ export default function DashboardPage() {
   const transacoesFiltradas = filtro === 'todos' ? transacoes : transacoes.filter(t => t.pessoa.toLowerCase() === filtro.toLowerCase());
   const cartaoSelecionado = sistema.cartoes.find(c => c.id === cartaoSelecionadoId);
   const saldoVale = calcularSaldoVale();
+
+  // Total de faturas pendentes do mês atual
+  const totalFaturasPendentes = (sistema.faturas[mesKey] || [])
+    .filter(f => !f.paga)
+    .reduce((s, f) => s + f.totalFatura, 0);
 
   const calcularCategorias = (): CategoriaTotal[] => {
     const cats: { [k: string]: number } = {};
@@ -357,6 +425,7 @@ export default function DashboardPage() {
   return (
     <>
       <div style={{ minHeight: '100vh', background: '#fafafa', fontFamily: 'Inter, sans-serif' }}>
+        {/* Header */}
         <header style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: `0.75rem ${px}`, position: 'sticky', top: 0, zIndex: 100 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1400px', margin: '0 auto' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
@@ -388,6 +457,7 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        {/* Tabs */}
         <div style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: `0 ${px}`, overflowX: 'auto' }}>
           <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: isMobile ? '0' : '0.5rem', minWidth: 'max-content' }}>
             {tabs.map(tab => (
@@ -400,6 +470,7 @@ export default function DashboardPage() {
         </div>
 
         <main style={{ padding: `1.5rem ${px}`, maxWidth: '1400px', margin: '0 auto' }}>
+          {/* Filtro e navegação de mês */}
           <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={filtro} onChange={e => setFiltro(e.target.value)}
               style={{ padding: '0.5rem 0.75rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', fontSize: '0.875rem', background: 'white' }}>
@@ -410,7 +481,9 @@ export default function DashboardPage() {
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
               <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() - 1); setDataReferencia(n); }} style={{ padding: '0.5rem 0.75rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '1rem' }}>←</button>
               <span style={{ fontSize: '0.875rem', fontWeight: '600', minWidth: isMobile ? '100px' : '120px', textAlign: 'center' }}>
-                {isMobile ? `${String(dataReferencia.getMonth() + 1).padStart(2, '0')}/${dataReferencia.getFullYear()}` : `${obterNomeMes(dataReferencia)}/${dataReferencia.getFullYear()}`}
+                {isMobile
+                  ? `${String(dataReferencia.getMonth() + 1).padStart(2, '0')}/${dataReferencia.getFullYear()}`
+                  : `${obterNomeMes(dataReferencia)}/${dataReferencia.getFullYear()}`}
               </span>
               <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() + 1); setDataReferencia(n); }} style={{ padding: '0.5rem 0.75rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '1rem' }}>→</button>
             </div>
@@ -418,23 +491,74 @@ export default function DashboardPage() {
 
           {tabAtiva === 'dashboard' && (
             <div>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
+              {/* Cards do resumo — 5 cards: Receitas, Despesas, Faturas Pendentes, Disponível, Vale */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)',
+                gap: '1rem',
+                marginBottom: '1.5rem',
+              }}>
+                {/* Receitas */}
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
-                  <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700', color: '#10b981' }}>{formatarMoeda(resumo.totalReceitas)}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: '#10b981' }}>
+                    {formatarMoeda(resumo.totalReceitas)}
+                  </div>
                 </div>
+
+                {/* Despesas pagas */}
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                  <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.375rem' }}>💸 Despesas</div>
-                  <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700', color: '#ef4444' }}>{formatarMoeda(resumo.totalDespesas)}</div>
-                  <div style={{ fontSize: '0.75rem', color: '#9ca3af', marginTop: '0.25rem' }}>Pago: {formatarMoeda(resumo.despesasPagas)} • Pendente: {formatarMoeda(resumo.despesasPendentes)}</div>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💸 Despesas</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: '#ef4444' }}>
+                    {formatarMoeda(resumo.totalDespesas)}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>
+                    Pago: {formatarMoeda(resumo.despesasPagas)}
+                  </div>
                 </div>
-                <div style={{ background: resumo.saldoDisponivel >= 0 ? '#10b981' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white' }}>
-                  <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>💵 Disponível</div>
-                  <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
+
+                {/* Faturas pendentes — novo card */}
+                <div style={{
+                  background: totalFaturasPendentes > 0 ? '#fff7ed' : 'white',
+                  border: `1px solid ${totalFaturasPendentes > 0 ? '#fed7aa' : '#e5e7eb'}`,
+                  borderRadius: '0.75rem',
+                  padding: '1.25rem',
+                }}>
+                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💳 Fat. Pendentes</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: totalFaturasPendentes > 0 ? '#ea580c' : '#374151' }}>
+                    {formatarMoeda(totalFaturasPendentes)}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>
+                    {totalFaturasPendentes > 0 ? 'A pagar' : 'Tudo em dia ✓'}
+                  </div>
                 </div>
-                <div style={{ background: saldoVale >= 0 ? '#8b5cf6' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white' }}>
-                  <div style={{ fontSize: '0.875rem', opacity: 0.9, marginBottom: '0.375rem' }}>🎫 Vale Alimentação</div>
-                  <div style={{ fontSize: isMobile ? '1.625rem' : '2rem', fontWeight: '700' }}>{formatarMoeda(saldoVale)}</div>
+
+                {/* Disponível */}
+                <div style={{
+                  background: resumo.saldoDisponivel >= 0 ? '#10b981' : '#ef4444',
+                  borderRadius: '0.75rem', padding: '1.25rem', color: 'white',
+                }}>
+                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '0.375rem' }}>💵 Disponível</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700' }}>
+                    {formatarMoeda(resumo.saldoDisponivel)}
+                  </div>
+                  {totalFaturasPendentes > 0 && (
+                    <div style={{ fontSize: '0.7rem', opacity: 0.85, marginTop: '0.25rem' }}>
+                      -{formatarMoeda(totalFaturasPendentes)} faturas
+                    </div>
+                  )}
+                </div>
+
+                {/* Vale Alimentação */}
+                <div style={{
+                  background: saldoVale >= 0 ? '#8b5cf6' : '#ef4444',
+                  borderRadius: '0.75rem', padding: '1.25rem', color: 'white',
+                  gridColumn: isMobile ? 'span 2' : 'auto',
+                }}>
+                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '0.375rem' }}>🎫 Vale Alimentação</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700' }}>
+                    {formatarMoeda(saldoVale)}
+                  </div>
                 </div>
               </div>
 
@@ -464,6 +588,7 @@ export default function DashboardPage() {
                 <GraficoEvolucao dados={calcularEvolucao()} />
               </div>
 
+              {/* Top 5 gastos */}
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
                 {transacoes.filter(t => t.tipo === 'despesa').sort((a, b) => b.valor - a.valor).slice(0, 5).map((t, i) => (
@@ -498,8 +623,29 @@ export default function DashboardPage() {
             />
           )}
 
-          {tabAtiva === 'categorias' && <GestaoCategorias transacoes={transacoes} mesReferencia={mesKey} faturas={sistema.faturas} categoriasCustomizadas={sistema.categoriasCustomizadas || []} onSalvarCategorias={handleSalvarCategorias} />}
-          {tabAtiva === 'cartoes' && <GestaoCartoes cartoes={sistema.cartoes} faturas={sistema.faturas} mesReferencia={mesKey} onCadastrarCartao={() => setModalCartaoAberto(true)} onAdicionarCompra={(id) => { setCartaoSelecionadoId(id); setModalCompraAberto(true); }} onPagarFatura={handlePagarFatura} />}
+          {tabAtiva === 'categorias' && (
+            <GestaoCategorias
+              transacoes={transacoes}
+              mesReferencia={mesKey}
+              faturas={sistema.faturas}
+              categoriasCustomizadas={sistema.categoriasCustomizadas || []}
+              onSalvarCategorias={handleSalvarCategorias}
+            />
+          )}
+
+          {tabAtiva === 'cartoes' && (
+            <GestaoCartoes
+              cartoes={sistema.cartoes}
+              faturas={sistema.faturas}
+              mesReferencia={mesKey}
+              onCadastrarCartao={() => { setCartaoEditando(null); setModalCartaoAberto(true); }}
+              onAdicionarCompra={(id) => { setCartaoSelecionadoId(id); setModalCompraAberto(true); }}
+              onPagarFatura={handlePagarFatura}
+              onEditarCartao={handleEditarCartao}
+              onExcluirCartao={handleExcluirCartao}
+            />
+          )}
+
           {!['dashboard', 'transacoes', 'categorias', 'cartoes'].includes(tabAtiva) && (
             <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '3rem', textAlign: 'center' }}>
               <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🚧</div>
@@ -510,10 +656,39 @@ export default function DashboardPage() {
         </main>
       </div>
 
-      <ModalReceita aberto={modalReceitaAberto} onFechar={handleFecharReceita} usuarioNome={usuario.nome} userId={usuario.uid} transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null} onSucesso={msg => showToast(msg, 'sucesso')} onErro={msg => showToast(msg, 'erro')} />
-      <ModalDespesa aberto={modalDespesaAberto} onFechar={handleFecharDespesa} userId={usuario.uid} categoriaPreenchida={categoriaPreenchida} descricaoPreenchida={descricaoPreenchida} />
-      <ModalCadastrarCartao aberto={modalCartaoAberto} onFechar={() => setModalCartaoAberto(false)} onSalvar={handleCadastrarCartao} />
-      {cartaoSelecionado && <ModalCompraCartao aberto={modalCompraAberto} cartaoId={cartaoSelecionado.id} cartaoNome={cartaoSelecionado.nome} onFechar={() => { setModalCompraAberto(false); setCartaoSelecionadoId(''); }} onSalvar={handleAdicionarCompra} usuarioNome={usuario.nome} />}
+      <ModalReceita
+        aberto={modalReceitaAberto}
+        onFechar={handleFecharReceita}
+        usuarioNome={usuario.nome}
+        userId={usuario.uid}
+        transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null}
+        onSucesso={msg => showToast(msg, 'sucesso')}
+        onErro={msg => showToast(msg, 'erro')}
+        dadosIniciais={dadosIniciais}
+      />
+      <ModalDespesa
+        aberto={modalDespesaAberto}
+        onFechar={handleFecharDespesa}
+        userId={usuario.uid}
+        categoriaPreenchida={categoriaPreenchida}
+        descricaoPreenchida={descricaoPreenchida}
+      />
+      <ModalCadastrarCartao
+        aberto={modalCartaoAberto}
+        onFechar={() => { setModalCartaoAberto(false); setCartaoEditando(null); }}
+        onSalvar={handleSalvarCartao}
+        cartaoEditando={cartaoEditando}
+      />
+      {cartaoSelecionado && (
+        <ModalCompraCartao
+          aberto={modalCompraAberto}
+          cartaoId={cartaoSelecionado.id}
+          cartaoNome={cartaoSelecionado.nome}
+          onFechar={() => { setModalCompraAberto(false); setCartaoSelecionadoId(''); }}
+          onSalvar={handleAdicionarCompra}
+          usuarioNome={usuario.nome}
+        />
+      )}
 
       <Toast mensagem={toast.mensagem} tipo={toast.tipo} visivel={toast.visivel} onFechar={fecharToast} />
 

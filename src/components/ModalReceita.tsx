@@ -5,6 +5,7 @@ import { ref, set, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { Transacao } from '@/types';
 import { gerarMesKey, gerarId } from '@/utils/financeiro';
+import { DadosInputMagico } from '@/utils/categorias';
 
 interface Props {
   aberto: boolean;
@@ -14,6 +15,7 @@ interface Props {
   transacaoEditando?: Transacao | null;
   onSucesso?: (mensagem: string) => void;
   onErro?: (mensagem: string) => void;
+  dadosIniciais?: DadosInputMagico | null;
 }
 
 const CATEGORIAS_RECEITA = [
@@ -33,7 +35,8 @@ export default function ModalReceita({
   userId,
   transacaoEditando = null,
   onSucesso,
-  onErro
+  onErro,
+  dadosIniciais = null,
 }: Props) {
   const modoEdicao = !!transacaoEditando;
 
@@ -45,20 +48,31 @@ export default function ModalReceita({
   const [carregando, setCarregando] = useState(false);
 
   useEffect(() => {
+    if (!aberto) return;
+
     if (modoEdicao && transacaoEditando) {
+      // Modo edição: preenche com dados da transação existente
       setData(transacaoEditando.data);
       setDescricao(transacaoEditando.descricao);
       setValor(String(transacaoEditando.valor));
       setPessoa(transacaoEditando.pessoa);
       setCategoria(transacaoEditando.categoria || 'Salário');
-    } else if (!modoEdicao) {
+    } else if (dadosIniciais) {
+      // Modo atalho rápido: preenche com dados do atalho
+      setData(dadosIniciais.data || new Date().toISOString().split('T')[0]);
+      setDescricao(dadosIniciais.descricao || '');
+      setValor(dadosIniciais.valor ? String(dadosIniciais.valor) : '');
+      setPessoa(dadosIniciais.pessoa || usuarioNome);
+      setCategoria(dadosIniciais.categoria || 'Salário');
+    } else {
+      // Modo criação limpo
       setData('');
       setDescricao('');
       setValor('');
       setPessoa(usuarioNome);
       setCategoria('Salário');
     }
-  }, [transacaoEditando, modoEdicao, aberto]);
+  }, [transacaoEditando, modoEdicao, dadosIniciais, aberto, usuarioNome]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,37 +100,33 @@ export default function ModalReceita({
           categoria,
           descricao: descricao || categoria,
           valor: valorNumerico,
-          pessoa
+          pessoa,
         };
 
         const mesKeyOriginal = gerarMesKey(new Date(transacaoEditando.data + 'T00:00:00'));
         const mesKeyNovo = gerarMesKey(new Date(data + 'T00:00:00'));
 
         if (mesKeyOriginal === mesKeyNovo) {
-          const caminho = `usuarios/${userId}/dadosPorMes/${mesKeyOriginal}`;
-          const dbRef = ref(database, caminho);
+          const dbRef = ref(database, `usuarios/${userId}/dadosPorMes/${mesKeyOriginal}`);
           const snapshot = await get(dbRef);
           const existentes: Transacao[] = snapshot.exists()
             ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
             : [];
-          const atualizadas = existentes.map(t =>
-            t.id === transacaoEditando.id ? transacaoAtualizada : t
-          );
-          await set(dbRef, atualizadas);
+          await set(dbRef, existentes.map(t => t.id === transacaoEditando.id ? transacaoAtualizada : t));
         } else {
-          const caminhoAntigo = `usuarios/${userId}/dadosPorMes/${mesKeyOriginal}`;
-          const snapAntigo = await get(ref(database, caminhoAntigo));
+          const refAntigo = ref(database, `usuarios/${userId}/dadosPorMes/${mesKeyOriginal}`);
+          const snapAntigo = await get(refAntigo);
           const existentesAntigos: Transacao[] = snapAntigo.exists()
             ? (Array.isArray(snapAntigo.val()) ? snapAntigo.val() : Object.values(snapAntigo.val()))
             : [];
-          await set(ref(database, caminhoAntigo), existentesAntigos.filter(t => t.id !== transacaoEditando.id));
+          await set(refAntigo, existentesAntigos.filter(t => t.id !== transacaoEditando.id));
 
-          const caminhoNovo = `usuarios/${userId}/dadosPorMes/${mesKeyNovo}`;
-          const snapNovo = await get(ref(database, caminhoNovo));
+          const refNovo = ref(database, `usuarios/${userId}/dadosPorMes/${mesKeyNovo}`);
+          const snapNovo = await get(refNovo);
           const existentesNovos: Transacao[] = snapNovo.exists()
             ? (Array.isArray(snapNovo.val()) ? snapNovo.val() : Object.values(snapNovo.val()))
             : [];
-          await set(ref(database, caminhoNovo), [...existentesNovos, transacaoAtualizada]);
+          await set(refNovo, [...existentesNovos, transacaoAtualizada]);
         }
 
         onSucesso?.('Receita atualizada com sucesso!');
@@ -133,12 +143,11 @@ export default function ModalReceita({
         valor: valorNumerico,
         pessoa,
         tipo: 'renda',
-        pago: true
+        pago: true,
       };
 
       const mesKey = gerarMesKey(new Date(data + 'T00:00:00'));
-      const caminho = `usuarios/${userId}/dadosPorMes/${mesKey}`;
-      const dbRef = ref(database, caminho);
+      const dbRef = ref(database, `usuarios/${userId}/dadosPorMes/${mesKey}`);
       const snapshot = await get(dbRef);
       const existentes = snapshot.exists()
         ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
@@ -146,7 +155,11 @@ export default function ModalReceita({
       await set(dbRef, [...existentes, receita]);
 
       onSucesso?.('Receita cadastrada com sucesso!');
-      setData(''); setDescricao(''); setValor(''); setPessoa(usuarioNome); setCategoria('Salário');
+      setData('');
+      setDescricao('');
+      setValor('');
+      setPessoa(usuarioNome);
+      setCategoria('Salário');
       onFechar();
 
     } catch (error) {
@@ -167,7 +180,7 @@ export default function ModalReceita({
         background: 'rgba(0,0,0,0.5)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 1000,
-        animation: 'fadeIn 0.2s ease'
+        animation: 'fadeIn 0.2s ease',
       }}
     >
       <div
@@ -175,7 +188,7 @@ export default function ModalReceita({
         style={{
           background: 'white', borderRadius: '0.75rem',
           width: '90%', maxWidth: '500px', padding: '2rem',
-          animation: 'slideUp 0.25s ease'
+          animation: 'slideUp 0.25s ease',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
@@ -233,7 +246,7 @@ export default function ModalReceita({
             fontSize: '0.9375rem', fontWeight: '600',
             cursor: carregando ? 'not-allowed' : 'pointer',
             opacity: carregando ? 0.6 : 1,
-            transition: 'opacity 0.2s'
+            transition: 'opacity 0.2s',
           }}>
             {carregando ? 'Salvando...' : modoEdicao ? '💾 Salvar Alterações' : '💰 Cadastrar Receita'}
           </button>

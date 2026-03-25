@@ -8,6 +8,7 @@ interface Props {
   aberto: boolean;
   onFechar: () => void;
   onSalvar: (cartao: CartaoCredito) => void;
+  cartaoEditando?: CartaoCredito | null;
 }
 
 const CORES = [
@@ -23,7 +24,7 @@ const CORES = [
 
 const BANDEIRAS = ['Mastercard', 'Visa', 'Elo', 'American Express', 'Hipercard', 'Outros'];
 
-export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Props) {
+export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, cartaoEditando }: Props) {
   const [nome, setNome] = useState('');
   const [bandeira, setBandeira] = useState('Mastercard');
   const [limite, setLimite] = useState('');
@@ -31,14 +32,31 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
   const [diaVencimento, setDiaVencimento] = useState('');
   const [cor, setCor] = useState('#8b5cf6');
 
-  // CORREÇÃO 1: ESC FECHA O MODAL
+  // Preenche campos ao editar
+  useEffect(() => {
+    if (cartaoEditando) {
+      setNome(cartaoEditando.nome);
+      setBandeira(cartaoEditando.bandeira);
+      setLimite(String(cartaoEditando.limite));
+      setDiaFechamento(String(cartaoEditando.diaFechamento));
+      setDiaVencimento(String(cartaoEditando.diaVencimento));
+      setCor(cartaoEditando.cor || '#8b5cf6');
+    } else {
+      setNome('');
+      setBandeira('Mastercard');
+      setLimite('');
+      setDiaFechamento('');
+      setDiaVencimento('');
+      setCor('#8b5cf6');
+    }
+  }, [cartaoEditando, aberto]);
+
+  // ESC fecha o modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onFechar();
     };
-    if (aberto) {
-      window.addEventListener('keydown', handleEsc);
-    }
+    if (aberto) window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aberto, onFechar]);
 
@@ -49,7 +67,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
     }
 
     const cartao: CartaoCredito = {
-      id: gerarId(),
+      id: cartaoEditando ? cartaoEditando.id : gerarId(),
       nome: nome.trim(),
       bandeira,
       limite: parseFloat(limite),
@@ -59,35 +77,25 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
     };
 
     onSalvar(cartao);
-    
-    setNome('');
-    setBandeira('Mastercard');
-    setLimite('');
-    setDiaFechamento('');
-    setDiaVencimento('');
-    setCor('#8b5cf6');
     onFechar();
   };
 
   if (!aberto) return null;
 
+  const isEdicao = !!cartaoEditando;
+
   return (
-    // CORREÇÃO 2: SCROLL AQUI, SEM FLEX
     <div
       onClick={onFechar}
       style={{
         position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
+        top: 0, left: 0, right: 0, bottom: 0,
         background: 'rgba(0,0,0,0.5)',
         zIndex: 1000,
         overflow: 'auto',
         padding: '40px 20px',
       }}
     >
-      {/* CORREÇÃO 3: SEM MAXHEIGHT */}
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
@@ -99,7 +107,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         }}
       >
-        {/* HEADER FIXO */}
+        {/* HEADER */}
         <div style={{
           padding: '20px 24px',
           borderBottom: '1px solid #e5e7eb',
@@ -107,30 +115,16 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
-          <h3 style={{
-            fontSize: '20px',
-            fontWeight: '700',
-            color: '#111827',
-            margin: 0
-          }}>
-            💳 Cadastrar Cartão
+          <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 }}>
+            {isEdicao ? '✏️ Editar Cartão' : '💳 Cadastrar Cartão'}
           </h3>
           <button
             onClick={onFechar}
             style={{
-              background: 'none',
-              border: 'none',
-              fontSize: '24px',
-              cursor: 'pointer',
-              color: '#9ca3af',
-              padding: 0,
-              width: '32px',
-              height: '32px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: '8px',
-              transition: 'all 0.2s',
+              background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer',
+              color: '#9ca3af', padding: 0, width: '32px', height: '32px',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: '8px', transition: 'all 0.2s',
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#f3f4f6'}
             onMouseLeave={(e) => e.currentTarget.style.background = 'none'}
@@ -140,9 +134,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
         </div>
 
         {/* CONTEÚDO */}
-        <div style={{
-          padding: '24px',
-        }}>
+        <div style={{ padding: '24px' }}>
           {/* Preview */}
           <div style={{
             background: cor,
@@ -154,7 +146,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'space-between',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)'
+            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
           }}>
             <div style={{ fontSize: '14px', opacity: 0.9 }}>{bandeira}</div>
             <div>
@@ -171,13 +163,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
             {/* Nome */}
             <div>
-              <label style={{
-                display: 'block',
-                fontWeight: '600',
-                marginBottom: '8px',
-                fontSize: '14px',
-                color: '#374151'
-              }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                 Nome do Cartão
               </label>
               <input
@@ -186,14 +172,9 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Ex: Nubank, Inter, C6..."
                 style={{
-                  width: '100%',
-                  padding: '12px',
-                  border: '2px solid #e5e7eb',
-                  borderRadius: '8px',
-                  fontSize: '15px',
-                  boxSizing: 'border-box',
-                  outline: 'none',
-                  transition: 'border-color 0.2s',
+                  width: '100%', padding: '12px', border: '2px solid #e5e7eb',
+                  borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box',
+                  outline: 'none', transition: 'border-color 0.2s',
                 }}
                 onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
                 onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
@@ -203,40 +184,22 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             {/* Bandeira e Limite */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{
-                  display: 'block',
-                  fontWeight: '600',
-                  marginBottom: '8px',
-                  fontSize: '14px',
-                  color: '#374151'
-                }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                   Bandeira
                 </label>
                 <select
                   value={bandeira}
                   onChange={(e) => setBandeira(e.target.value)}
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
+                    width: '100%', padding: '12px', border: '2px solid #e5e7eb',
+                    borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
                 >
                   {BANDEIRAS.map(b => <option key={b} value={b}>{b}</option>)}
                 </select>
               </div>
-
               <div>
-                <label style={{
-                  display: 'block',
-                  fontWeight: '600',
-                  marginBottom: '8px',
-                  fontSize: '14px',
-                  color: '#374151'
-                }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                   Limite (R$)
                 </label>
                 <input
@@ -245,13 +208,8 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
                   onChange={(e) => setLimite(e.target.value)}
                   placeholder="5000"
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
+                    width: '100%', padding: '12px', border: '2px solid #e5e7eb',
+                    borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
                 />
               </div>
@@ -260,59 +218,32 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             {/* Dias */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
               <div>
-                <label style={{
-                  display: 'block',
-                  fontWeight: '600',
-                  marginBottom: '8px',
-                  fontSize: '14px',
-                  color: '#374151'
-                }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                   Dia Fechamento
                 </label>
                 <input
-                  type="number"
-                  min="1"
-                  max="31"
+                  type="number" min="1" max="31"
                   value={diaFechamento}
                   onChange={(e) => setDiaFechamento(e.target.value)}
                   placeholder="01"
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
+                    width: '100%', padding: '12px', border: '2px solid #e5e7eb',
+                    borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
                 />
               </div>
-
               <div>
-                <label style={{
-                  display: 'block',
-                  fontWeight: '600',
-                  marginBottom: '8px',
-                  fontSize: '14px',
-                  color: '#374151'
-                }}>
+                <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                   Dia Vencimento
                 </label>
                 <input
-                  type="number"
-                  min="1"
-                  max="31"
+                  type="number" min="1" max="31"
                   value={diaVencimento}
                   onChange={(e) => setDiaVencimento(e.target.value)}
                   placeholder="10"
                   style={{
-                    width: '100%',
-                    padding: '12px',
-                    border: '2px solid #e5e7eb',
-                    borderRadius: '8px',
-                    fontSize: '15px',
-                    boxSizing: 'border-box',
-                    outline: 'none',
+                    width: '100%', padding: '12px', border: '2px solid #e5e7eb',
+                    borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
                 />
               </div>
@@ -320,37 +251,21 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
 
             {/* Cores */}
             <div>
-              <label style={{
-                display: 'block',
-                fontWeight: '600',
-                marginBottom: '8px',
-                fontSize: '14px',
-                color: '#374151'
-              }}>
+              <label style={{ display: 'block', fontWeight: '600', marginBottom: '8px', fontSize: '14px', color: '#374151' }}>
                 Cor do Cartão
               </label>
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(4, 1fr)',
-                gap: '12px'
-              }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '12px' }}>
                 {CORES.map((c) => (
                   <button
                     key={c.hex}
                     type="button"
                     onClick={() => setCor(c.hex)}
                     style={{
-                      height: '56px',
-                      background: c.hex,
+                      height: '56px', background: c.hex,
                       border: cor === c.hex ? '3px solid #111827' : '2px solid #e5e7eb',
-                      borderRadius: '8px',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: 'white',
-                      fontWeight: '700',
-                      fontSize: '20px',
+                      borderRadius: '8px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: 'white', fontWeight: '700', fontSize: '20px',
                       transition: 'transform 0.2s',
                     }}
                     onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.05)'}
@@ -364,7 +279,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
           </div>
         </div>
 
-        {/* FOOTER FIXO */}
+        {/* FOOTER */}
         <div style={{
           padding: '20px 24px',
           borderTop: '1px solid #e5e7eb',
@@ -377,16 +292,9 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             type="button"
             onClick={onFechar}
             style={{
-              flex: 1,
-              padding: '14px',
-              background: '#f3f4f6',
-              color: '#374151',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '15px',
-              transition: 'background 0.2s',
+              flex: 1, padding: '14px', background: '#f3f4f6', color: '#374151',
+              border: 'none', borderRadius: '8px', fontWeight: '600', cursor: 'pointer',
+              fontSize: '15px', transition: 'background 0.2s',
             }}
             onMouseEnter={(e) => e.currentTarget.style.background = '#e5e7eb'}
             onMouseLeave={(e) => e.currentTarget.style.background = '#f3f4f6'}
@@ -397,21 +305,16 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar }: Pro
             type="button"
             onClick={handleSalvar}
             style={{
-              flex: 1,
-              padding: '14px',
+              flex: 1, padding: '14px',
               background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              fontSize: '15px',
+              color: 'white', border: 'none', borderRadius: '8px',
+              fontWeight: '600', cursor: 'pointer', fontSize: '15px',
               transition: 'opacity 0.2s',
             }}
             onMouseEnter={(e) => e.currentTarget.style.opacity = '0.9'}
             onMouseLeave={(e) => e.currentTarget.style.opacity = '1'}
           >
-            💾 Salvar Cartão
+            {isEdicao ? '✏️ Salvar Alterações' : '💾 Salvar Cartão'}
           </button>
         </div>
       </div>

@@ -12,32 +12,45 @@ interface Props {
   onCadastrarCartao: () => void;
   onAdicionarCompra: (cartaoId: string) => void;
   onPagarFatura: (cartaoId: string, mesKey: string) => void;
+  onEditarCartao: (cartao: CartaoCredito) => void;
+  onExcluirCartao: (cartaoId: string) => void;
 }
 
-export default function GestaoCartoes({ 
-  cartoes, 
-  faturas, 
+export default function GestaoCartoes({
+  cartoes,
+  faturas,
   mesReferencia,
   onCadastrarCartao,
   onAdicionarCompra,
-  onPagarFatura
+  onPagarFatura,
+  onEditarCartao,
+  onExcluirCartao,
 }: Props) {
   const isMobile = useIsMobile();
   const [cartaoSelecionado, setCartaoSelecionado] = useState<string | null>(null);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState<string | null>(null);
 
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
     return faturasDoMes.find(f => f.cartaoId === cartaoId) || null;
   };
 
+  const handleExcluir = (cartaoId: string) => {
+    if (confirmandoExclusao === cartaoId) {
+      onExcluirCartao(cartaoId);
+      setConfirmandoExclusao(null);
+    } else {
+      setConfirmandoExclusao(cartaoId);
+      // Cancela confirmação após 3 segundos
+      setTimeout(() => setConfirmandoExclusao(null), 3000);
+    }
+  };
+
   if (cartoes.length === 0) {
     return (
       <div style={{
-        background: 'white',
-        border: '1px solid #e5e7eb',
-        borderRadius: '0.5rem',
-        padding: '3rem',
-        textAlign: 'center'
+        background: 'white', border: '1px solid #e5e7eb',
+        borderRadius: '0.5rem', padding: '3rem', textAlign: 'center',
       }}>
         <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>💳</div>
         <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>
@@ -49,14 +62,9 @@ export default function GestaoCartoes({
         <button
           onClick={onCadastrarCartao}
           style={{
-            padding: '0.75rem 1.5rem',
-            background: '#06b6d4',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            cursor: 'pointer'
+            padding: '0.75rem 1.5rem', background: '#06b6d4', color: 'white',
+            border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem',
+            fontWeight: '500', cursor: 'pointer',
           }}
         >
           + Cadastrar Primeiro Cartão
@@ -68,66 +76,52 @@ export default function GestaoCartoes({
   return (
     <div>
       <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1.5rem'
+        display: 'flex', justifyContent: 'space-between',
+        alignItems: 'center', marginBottom: '1.5rem',
       }}>
-        <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>
-          Meus Cartões
-        </h3>
+        <h3 style={{ fontSize: '1.25rem', fontWeight: '600' }}>Meus Cartões</h3>
         <button
           onClick={onCadastrarCartao}
           style={{
-            padding: '0.5rem 1rem',
-            background: '#06b6d4',
-            color: 'white',
-            border: 'none',
-            borderRadius: '0.5rem',
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            cursor: 'pointer'
+            padding: '0.5rem 1rem', background: '#06b6d4', color: 'white',
+            border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem',
+            fontWeight: '500', cursor: 'pointer',
           }}
         >
           + {isMobile ? 'Novo' : 'Novo Cartão'}
         </button>
       </div>
 
-      {/* Mobile: 1 coluna. Desktop: grid automático com mínimo de 320px */}
       <div style={{
         display: 'grid',
         gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))',
-        gap: '1.5rem'
+        gap: '1.5rem',
       }}>
         {cartoes.map(cartao => {
           const fatura = obterFatura(cartao.id);
           const totalFatura = fatura?.totalFatura || 0;
           const itensFatura = fatura?.itens || [];
           const estaPaga = fatura?.paga || false;
+          const excluindo = confirmandoExclusao === cartao.id;
 
           return (
             <div
               key={cartao.id}
               style={{
-                background: 'white',
-                border: '1px solid #e5e7eb',
-                borderRadius: '0.75rem',
-                overflow: 'hidden'
+                background: 'white', border: '1px solid #e5e7eb',
+                borderRadius: '0.75rem', overflow: 'hidden',
               }}
             >
               {/* Topo colorido */}
               <div style={{
                 background: cartao.cor || '#06b6d4',
-                padding: '1.5rem',
-                color: 'white',
+                padding: '1.5rem', color: 'white',
                 position: 'relative',
-                minHeight: isMobile ? '120px' : '160px'
+                minHeight: isMobile ? '120px' : '160px',
               }}>
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'flex-start',
-                  marginBottom: '2rem'
+                  display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'flex-start', marginBottom: '2rem',
                 }}>
                   <div>
                     <div style={{ fontSize: '0.75rem', opacity: 0.9, marginBottom: '0.25rem' }}>
@@ -137,13 +131,45 @@ export default function GestaoCartoes({
                       {cartao.nome}
                     </div>
                   </div>
-                  <div style={{
-                    background: 'rgba(255, 255, 255, 0.2)',
-                    padding: '0.25rem 0.5rem',
-                    borderRadius: '0.25rem',
-                    fontSize: '0.75rem'
-                  }}>
-                    💳
+
+                  {/* Botões editar/excluir no topo */}
+                  <div style={{ display: 'flex', gap: '0.375rem' }}>
+                    <button
+                      onClick={() => onEditarCartao(cartao)}
+                      title="Editar cartão"
+                      style={{
+                        background: 'rgba(255,255,255,0.2)',
+                        border: 'none', borderRadius: '0.375rem',
+                        color: 'white', cursor: 'pointer',
+                        padding: '0.25rem 0.5rem', fontSize: '0.875rem',
+                        transition: 'background 0.2s',
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.35)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                    >
+                      ✏️
+                    </button>
+                    <button
+                      onClick={() => handleExcluir(cartao.id)}
+                      title={excluindo ? 'Clique novamente para confirmar' : 'Excluir cartão'}
+                      style={{
+                        background: excluindo ? 'rgba(239,68,68,0.8)' : 'rgba(255,255,255,0.2)',
+                        border: excluindo ? '2px solid white' : 'none',
+                        borderRadius: '0.375rem',
+                        color: 'white', cursor: 'pointer',
+                        padding: '0.25rem 0.5rem', fontSize: '0.875rem',
+                        transition: 'all 0.2s',
+                        fontWeight: excluindo ? '700' : '400',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!excluindo) e.currentTarget.style.background = 'rgba(239,68,68,0.5)';
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!excluindo) e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                      }}
+                    >
+                      {excluindo ? '⚠️ Confirmar?' : '🗑️'}
+                    </button>
                   </div>
                 </div>
 
@@ -151,17 +177,15 @@ export default function GestaoCartoes({
                   Limite: {formatarMoeda(cartao.limite)}
                 </div>
                 <div style={{ fontSize: '0.75rem', opacity: 0.9, marginTop: '0.25rem' }}>
-                  Vencimento: dia {cartao.diaVencimento}
+                  Vencimento: dia {cartao.diaVencimento} • Fechamento: dia {cartao.diaFechamento}
                 </div>
               </div>
 
               {/* Corpo */}
               <div style={{ padding: '1.25rem' }}>
                 <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '1rem'
+                  display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', marginBottom: '1rem',
                 }}>
                   <div>
                     <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>
@@ -170,23 +194,28 @@ export default function GestaoCartoes({
                     <div style={{
                       fontSize: isMobile ? '1.375rem' : '1.5rem',
                       fontWeight: '700',
-                      color: estaPaga ? '#10b981' : '#374151'
+                      color: estaPaga ? '#10b981' : totalFatura > 0 ? '#ef4444' : '#374151',
                     }}>
                       {formatarMoeda(totalFatura)}
                     </div>
                   </div>
-                  {estaPaga && (
+                  {estaPaga ? (
                     <div style={{
-                      background: '#d1fae5',
-                      color: '#065f46',
-                      padding: '0.375rem 0.75rem',
-                      borderRadius: '0.375rem',
-                      fontSize: '0.75rem',
-                      fontWeight: '600'
+                      background: '#d1fae5', color: '#065f46',
+                      padding: '0.375rem 0.75rem', borderRadius: '0.375rem',
+                      fontSize: '0.75rem', fontWeight: '600',
                     }}>
                       ✓ Paga
                     </div>
-                  )}
+                  ) : totalFatura > 0 ? (
+                    <div style={{
+                      background: '#fef2f2', color: '#991b1b',
+                      padding: '0.375rem 0.75rem', borderRadius: '0.375rem',
+                      fontSize: '0.75rem', fontWeight: '600',
+                    }}>
+                      ⏳ Pendente
+                    </div>
+                  ) : null}
                 </div>
 
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '1rem' }}>
@@ -197,33 +226,21 @@ export default function GestaoCartoes({
                   <button
                     onClick={() => onAdicionarCompra(cartao.id)}
                     style={{
-                      flex: 1,
-                      padding: '0.625rem',
-                      background: '#f3f4f6',
-                      color: '#374151',
-                      border: 'none',
-                      borderRadius: '0.5rem',
-                      fontSize: '0.8125rem',
-                      fontWeight: '500',
-                      cursor: 'pointer'
+                      flex: 1, padding: '0.625rem', background: '#f3f4f6',
+                      color: '#374151', border: 'none', borderRadius: '0.5rem',
+                      fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer',
                     }}
                   >
                     + Compra
                   </button>
-                  
+
                   {totalFatura > 0 && !estaPaga && (
                     <button
                       onClick={() => onPagarFatura(cartao.id, mesReferencia)}
                       style={{
-                        flex: 1,
-                        padding: '0.625rem',
-                        background: '#10b981',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '0.5rem',
-                        fontSize: '0.8125rem',
-                        fontWeight: '500',
-                        cursor: 'pointer'
+                        flex: 1, padding: '0.625rem', background: '#10b981',
+                        color: 'white', border: 'none', borderRadius: '0.5rem',
+                        fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer',
                       }}
                     >
                       {isMobile ? 'Pagar' : 'Pagar Fatura'}
@@ -234,13 +251,9 @@ export default function GestaoCartoes({
                     <button
                       onClick={() => setCartaoSelecionado(cartaoSelecionado === cartao.id ? null : cartao.id)}
                       style={{
-                        padding: '0.625rem 0.75rem',
-                        background: '#f3f4f6',
-                        color: '#374151',
-                        border: 'none',
-                        borderRadius: '0.5rem',
-                        fontSize: '0.8125rem',
-                        cursor: 'pointer'
+                        padding: '0.625rem 0.75rem', background: '#f3f4f6',
+                        color: '#374151', border: 'none', borderRadius: '0.5rem',
+                        fontSize: '0.8125rem', cursor: 'pointer',
                       }}
                     >
                       {cartaoSelecionado === cartao.id ? '▼' : '▶'}
@@ -248,38 +261,34 @@ export default function GestaoCartoes({
                   )}
                 </div>
 
+                {/* Lista de itens da fatura */}
                 {cartaoSelecionado === cartao.id && itensFatura.length > 0 && (
                   <div style={{
-                    marginTop: '1rem',
-                    paddingTop: '1rem',
-                    borderTop: '1px solid #e5e7eb'
+                    marginTop: '1rem', paddingTop: '1rem',
+                    borderTop: '1px solid #e5e7eb',
                   }}>
                     <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#374151', marginBottom: '0.75rem' }}>
                       Itens da Fatura:
                     </div>
-                    {itensFatura.map(item => (
+                    {itensFatura.map((item: ItemFatura) => (
                       <div
                         key={item.id}
                         style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '0.5rem 0',
-                          borderBottom: '1px solid #f3f4f6',
-                          fontSize: '0.8125rem'
+                          display: 'flex', justifyContent: 'space-between',
+                          alignItems: 'center', padding: '0.5rem 0',
+                          borderBottom: '1px solid #f3f4f6', fontSize: '0.8125rem',
                         }}
                       >
                         <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
-                          <div style={{ fontWeight: '500', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <div style={{
+                            fontWeight: '500', color: '#374151',
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                          }}>
                             {item.descricao}
                             {item.parcelamento && (
                               <span style={{
-                                marginLeft: '0.5rem',
-                                fontSize: '0.75rem',
-                                color: '#6b7280',
-                                background: '#f3f4f6',
-                                padding: '0.125rem 0.375rem',
-                                borderRadius: '0.25rem'
+                                marginLeft: '0.5rem', fontSize: '0.75rem', color: '#6b7280',
+                                background: '#f3f4f6', padding: '0.125rem 0.375rem', borderRadius: '0.25rem',
                               }}>
                                 {item.parcelamento.parcelaAtual}/{item.parcelamento.totalParcelas}
                               </span>
