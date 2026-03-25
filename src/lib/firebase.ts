@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth';
+import { getAuth, browserLocalPersistence, setPersistence, onAuthStateChanged } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
@@ -12,12 +12,29 @@ const firebaseConfig = {
   appId: "1:109907986952:web:32778a938874f2dd05dfbd"
 };
 
-// Inicializar Firebase
+console.log('🔥 Inicializando Firebase...');
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const database = getDatabase(app);
 
-// Configurar persistência APÓS criar auth
-setPersistence(auth, browserLocalPersistence).catch((error) => {
-  console.error("Erro ao configurar persistência:", error);
-});
+// Configurar persistência
+setPersistence(auth, browserLocalPersistence)
+  .then(() => {
+    console.log('✅ Persistência LOCAL configurada com sucesso!');
+  })
+  .catch((error) => {
+    console.error('❌ ERRO ao configurar persistência:', error);
+  });
+
+// Monitor de autenticação
+if (typeof window !== 'undefined') {
+  onAuthStateChanged(auth, (user) => {
+    if (user) {
+      console.log('✅ Usuário autenticado:', user.email);
+      console.log('📦 localStorage disponível:', !!window.localStorage);
+      console.log('🔑 Current user:', auth.currentUser?.email);
+    } else {
+      console.log('❌ Nenhum usuário autenticado');
+    }
+  });
+}

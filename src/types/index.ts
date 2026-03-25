@@ -1,7 +1,3 @@
-// ─────────────────────────────────────────────────────────────
-// TIPOS PRINCIPAIS
-// ─────────────────────────────────────────────────────────────
-
 export interface Usuario {
   uid: string;
   nome: string;
@@ -28,7 +24,7 @@ export interface CartaoCredito {
   limite: number;
   diaFechamento: number;
   diaVencimento: number;
-  cor: string; // ✅ ADICIONADO
+  cor: string;
 }
 
 export interface ItemFatura {
@@ -91,30 +87,22 @@ export interface AtalhoRapido {
 }
 
 export interface SistemaFinanceiro {
-  dadosPorMes: {
-    [mesKey: string]: Transacao[];
-  };
+  dadosPorMes: { [mesKey: string]: Transacao[] };
   pessoasCadastradas: string[];
   metas: Meta[];
   reservaEmergencia: ReservaEmergencia;
   cartoes: CartaoCredito[];
-  faturas: {
-    [mesKey: string]: Fatura[];
-  };
+  faturas: { [mesKey: string]: Fatura[] };
   categoriasCustomizadas: CategoriaCustomizada[];
 }
 
-// ─────────────────────────────────────────────────────────────
-// TIPOS AUXILIARES
-// ─────────────────────────────────────────────────────────────
-
-export interface Resumo {
+export interface ResumoFinanceiro {
   totalReceitas: number;
   totalDespesas: number;
   despesasPagas: number;
   despesasPendentes: number;
+  gastosDiarios: number;
   saldoDisponivel: number;
-  saldoTotal: number;
 }
 
 export interface CategoriaTotal {
@@ -122,4 +110,14 @@ export interface CategoriaTotal {
   total: number;
   percentual: number;
   cor: string;
+}
+
+// COMPATIBILIDADE
+export interface Resumo {
+  totalReceitas: number;
+  totalDespesas: number;
+  despesasPagas: number;
+  despesasPendentes: number;
+  saldoDisponivel: number;
+  saldoTotal: number;
 }
