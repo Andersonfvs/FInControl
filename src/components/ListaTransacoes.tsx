@@ -54,7 +54,6 @@ export default function ListaTransacoes({
     }
   };
 
-  // NOVO: Input Mágico — processa ao pressionar Enter
   const handleInputMagicoKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key !== 'Enter') return;
     const texto = inputMagico.trim();
@@ -74,7 +73,6 @@ export default function ListaTransacoes({
   if (transacoes.length === 0) {
     return (
       <div>
-        {/* Input Mágico mesmo sem transações */}
         <InputMagicoField value={inputMagico} onChange={setInputMagico} onKeyDown={handleInputMagicoKeyDown} />
         <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '3rem', textAlign: 'center' }}>
           <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📋</div>
@@ -87,10 +85,8 @@ export default function ListaTransacoes({
 
   return (
     <div>
-      {/* NOVO: Input Mágico */}
       <InputMagicoField value={inputMagico} onChange={setInputMagico} onKeyDown={handleInputMagicoKeyDown} />
 
-      {/* Filtros — igual ao original */}
       <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.25rem', alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           type="text"
@@ -113,17 +109,25 @@ export default function ListaTransacoes({
         </div>
       </div>
 
-      {/* ── MOBILE: cards ─────────────────────────────────────────── */}
+      {/* MOBILE */}
       {isMobile ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
           {transacoesOrdenadas.map((transacao, index) => {
             const isPago = transacao.pago;
             const isReceita = transacao.tipo === 'renda';
             const isCarregando = carregandoId === transacao.id;
-            const icone = obterIconeCategoria(transacao.categoria); // NOVO
+            const icone = obterIconeCategoria(transacao.categoria);
+            // Campos extras via cast seguro
+            const parcelamento = (transacao as any).parcelamento as { parcelaAtual: number; totalParcelas: number } | undefined;
+            const dividido = (transacao as any).dividido as boolean | undefined;
+            const notaFiscalUrl = (transacao as any).notaFiscalUrl as string | undefined;
 
             return (
-              <div key={`mob-${transacao.id}-${index}`} style={{ background: isPago && !isReceita ? '#f0fdf4' : 'white', border: `1px solid ${isPago && !isReceita ? '#bbf7d0' : '#e5e7eb'}`, borderRadius: '0.75rem', padding: '1rem', transition: 'all 0.2s' }}>
+              <div key={`mob-${transacao.id}-${index}`} style={{
+                background: isPago && !isReceita ? '#f0fdf4' : 'white',
+                border: `1px solid ${isPago && !isReceita ? '#bbf7d0' : '#e5e7eb'}`,
+                borderRadius: '0.75rem', padding: '1rem', transition: 'all 0.2s',
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
                   <div style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
                     {new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' })}
@@ -136,17 +140,32 @@ export default function ListaTransacoes({
                   {transacao.descricao}
                 </div>
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
-                  {/* NOVO: ícone na categoria */}
                   <span style={{ background: '#f3f4f6', padding: '0.2rem 0.6rem', borderRadius: '0.375rem', fontSize: '0.75rem', color: '#374151', fontWeight: '500' }}>
                     {icone} {transacao.categoria}
                   </span>
                   <span style={{ background: '#f3f4f6', padding: '0.2rem 0.6rem', borderRadius: '0.375rem', fontSize: '0.75rem', color: '#6b7280' }}>
                     👤 {transacao.pessoa.split(' ')[0]}
                   </span>
-                  {transacao.parcelamento && <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>{transacao.parcelamento.parcelaAtual}/{transacao.parcelamento.totalParcelas}</span>}
-                  {transacao.dividido && <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>50%</span>}
-                  {(transacao as any).notaFiscalUrl && <span style={{ background: '#f0fdf4', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>🧾 NF-e</span>}
-                  {isPago && <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>✓ Pago</span>}
+                  {parcelamento && (
+                    <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                      {parcelamento.parcelaAtual}/{parcelamento.totalParcelas}
+                    </span>
+                  )}
+                  {dividido && (
+                    <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                      50%
+                    </span>
+                  )}
+                  {notaFiscalUrl && (
+                    <span style={{ background: '#f0fdf4', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                      🧾 NF-e
+                    </span>
+                  )}
+                  {isPago && (
+                    <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                      ✓ Pago
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', borderTop: '1px solid #f3f4f6', paddingTop: '0.75rem' }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', cursor: 'pointer', marginRight: 'auto', fontSize: '0.8125rem', color: '#6b7280', fontWeight: '500' }}>
@@ -164,7 +183,7 @@ export default function ListaTransacoes({
           })}
         </div>
       ) : (
-        /* ── DESKTOP: tabela ──────────────────────────────────────── */
+        /* DESKTOP */
         <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem', overflow: 'hidden' }}>
           <div style={{ padding: '1rem 1.5rem', borderBottom: '1px solid #e5e7eb', background: '#f9fafb', display: 'grid', gridTemplateColumns: '40px 100px 2fr 1fr 120px 130px 80px', gap: '1rem', fontSize: '0.75rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             <div>Status</div><div>Data</div><div>Descrição</div><div>Categoria</div><div>Pessoa</div><div style={{ textAlign: 'right' }}>Valor</div><div style={{ textAlign: 'center' }}>Ações</div>
@@ -174,7 +193,10 @@ export default function ListaTransacoes({
             const isPago = transacao.pago;
             const isReceita = transacao.tipo === 'renda';
             const isCarregando = carregandoId === transacao.id;
-            const icone = obterIconeCategoria(transacao.categoria); // NOVO
+            const icone = obterIconeCategoria(transacao.categoria);
+            const parcelamento = (transacao as any).parcelamento as { parcelaAtual: number; totalParcelas: number } | undefined;
+            const dividido = (transacao as any).dividido as boolean | undefined;
+            const notaFiscalUrl = (transacao as any).notaFiscalUrl as string | undefined;
 
             return (
               <div
@@ -196,13 +218,22 @@ export default function ListaTransacoes({
                     {transacao.descricao}
                   </div>
                   <div style={{ display: 'flex', gap: '0.375rem', fontSize: '0.75rem' }}>
-                    {transacao.parcelamento && <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>{transacao.parcelamento.parcelaAtual}/{transacao.parcelamento.totalParcelas}</span>}
-                    {transacao.dividido && <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>50%</span>}
-                    {(transacao as any).notaFiscalUrl && <span style={{ background: '#f0fdf4', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>🧾 NF-e</span>}
-                    {isPago && <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>✓ Pago</span>}
+                    {parcelamento && (
+                      <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>
+                        {parcelamento.parcelaAtual}/{parcelamento.totalParcelas}
+                      </span>
+                    )}
+                    {dividido && (
+                      <span style={{ background: '#fef3c7', color: '#92400e', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>50%</span>
+                    )}
+                    {notaFiscalUrl && (
+                      <span style={{ background: '#f0fdf4', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>🧾 NF-e</span>
+                    )}
+                    {isPago && (
+                      <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>✓ Pago</span>
+                    )}
                   </div>
                 </div>
-                {/* NOVO: ícone na categoria */}
                 <div>
                   <span style={{ background: '#f3f4f6', padding: '0.25rem 0.625rem', borderRadius: '0.375rem', fontSize: '0.8125rem', color: '#374151', fontWeight: '500' }}>
                     {icone} {transacao.categoria}
@@ -213,11 +244,18 @@ export default function ListaTransacoes({
                   {isReceita ? '+' : '-'}{formatarMoeda(transacao.valor)}
                 </div>
                 <div style={{ display: 'flex', gap: '0.125rem', justifyContent: 'center' }}>
-                  {[{ icon: '✏️', fn: () => onEditar(transacao) }, { icon: '📋', fn: () => onDuplicar(transacao) }, { icon: '🗑️', fn: () => handleExcluir(transacao) }].map((btn, bi) => (
-                    <button key={bi} onClick={btn.fn} style={{ padding: '0.375rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1rem', opacity: 0.6, transition: 'opacity 0.15s' }}
+                  {[
+                    { icon: '✏️', fn: () => onEditar(transacao) },
+                    { icon: '📋', fn: () => onDuplicar(transacao) },
+                    { icon: '🗑️', fn: () => handleExcluir(transacao) },
+                  ].map((btn, bi) => (
+                    <button key={bi} onClick={btn.fn}
+                      style={{ padding: '0.375rem', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: '1rem', opacity: 0.6, transition: 'opacity 0.15s' }}
                       onMouseEnter={e => e.currentTarget.style.opacity = '1'}
                       onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
-                    >{btn.icon}</button>
+                    >
+                      {btn.icon}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -231,7 +269,6 @@ export default function ListaTransacoes({
   );
 }
 
-// ── Componente Input Mágico ───────────────────────────────────
 function InputMagicoField({ value, onChange, onKeyDown }: {
   value: string;
   onChange: (v: string) => void;
@@ -256,7 +293,8 @@ function InputMagicoField({ value, onChange, onKeyDown }: {
             background: 'linear-gradient(135deg, #f0f9ff, #fafafa)',
             outline: 'none',
             color: '#374151',
-            transition: 'border-color 0.2s, box-shadow 0.2s'
+            transition: 'border-color 0.2s, box-shadow 0.2s',
+            boxSizing: 'border-box',
           }}
           onFocus={e => { e.currentTarget.style.borderColor = '#06b6d4'; e.currentTarget.style.boxShadow = '0 0 0 3px rgba(6,182,212,0.1)'; }}
           onBlur={e => { e.currentTarget.style.borderColor = '#e0f2fe'; e.currentTarget.style.boxShadow = 'none'; }}

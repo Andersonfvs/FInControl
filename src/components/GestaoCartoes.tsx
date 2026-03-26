@@ -14,6 +14,8 @@ interface Props {
   onPagarFatura: (cartaoId: string, mesKey: string) => void;
   onEditarCartao: (cartao: CartaoCredito) => void;
   onExcluirCartao: (cartaoId: string) => void;
+  onExcluirItemFatura: (cartaoId: string, itemId: string, mesKey: string) => void;
+  onEditarItemFatura: (cartaoId: string, item: ItemFatura, mesKey: string) => void;
 }
 
 export default function GestaoCartoes({
@@ -25,25 +27,53 @@ export default function GestaoCartoes({
   onPagarFatura,
   onEditarCartao,
   onExcluirCartao,
+  onExcluirItemFatura,
+  onEditarItemFatura,
 }: Props) {
   const isMobile = useIsMobile();
   const [cartaoSelecionado, setCartaoSelecionado] = useState<string | null>(null);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState<string | null>(null);
+  const [menuAberto, setMenuAberto] = useState<string | null>(null);
+  const [itemEditando, setItemEditando] = useState<{ cartaoId: string; item: ItemFatura } | null>(null);
+  const [editDescricao, setEditDescricao] = useState('');
+  const [editValor, setEditValor] = useState('');
+  const [editCategoria, setEditCategoria] = useState('');
 
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
     return faturasDoMes.find(f => f.cartaoId === cartaoId) || null;
   };
 
-  const handleExcluir = (cartaoId: string) => {
+  const handleExcluirCartao = (cartaoId: string) => {
     if (confirmandoExclusao === cartaoId) {
       onExcluirCartao(cartaoId);
       setConfirmandoExclusao(null);
+      setMenuAberto(null);
     } else {
       setConfirmandoExclusao(cartaoId);
-      // Cancela confirmação após 3 segundos
       setTimeout(() => setConfirmandoExclusao(null), 3000);
     }
+  };
+
+  const abrirEdicaoItem = (cartaoId: string, item: ItemFatura) => {
+    setItemEditando({ cartaoId, item });
+    setEditDescricao(item.descricao);
+    setEditValor(String(item.valor));
+    setEditCategoria(item.categoria);
+  };
+
+  const salvarEdicaoItem = () => {
+    if (!itemEditando) return;
+    const valorNum = parseFloat(editValor.replace(',', '.'));
+    if (isNaN(valorNum) || valorNum <= 0) return;
+    const itemAtualizado: ItemFatura = {
+      ...itemEditando.item,
+      descricao: editDescricao.trim() || itemEditando.item.descricao,
+      valor: valorNum,
+      categoria: editCategoria,
+    };
+    onEditarItemFatura(itemEditando.cartaoId, itemAtualizado, mesReferencia);
+    setItemEditando(null);
   };
 
   if (cartoes.length === 0) {
@@ -74,7 +104,7 @@ export default function GestaoCartoes({
   }
 
   return (
-    <div>
+    <div onClick={() => setMenuAberto(null)}>
       <div style={{
         display: 'flex', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: '1.5rem',
@@ -103,6 +133,7 @@ export default function GestaoCartoes({
           const itensFatura = fatura?.itens || [];
           const estaPaga = fatura?.paga || false;
           const excluindo = confirmandoExclusao === cartao.id;
+          const menuEsteAberto = menuAberto === cartao.id;
 
           return (
             <div
@@ -132,44 +163,72 @@ export default function GestaoCartoes({
                     </div>
                   </div>
 
-                  {/* Botões editar/excluir no topo */}
-                  <div style={{ display: 'flex', gap: '0.375rem' }}>
+                  {/* Menu 3 pontinhos ⋯ */}
+                  <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
                     <button
-                      onClick={() => onEditarCartao(cartao)}
-                      title="Editar cartão"
+                      onClick={() => setMenuAberto(menuEsteAberto ? null : cartao.id)}
                       style={{
-                        background: 'rgba(255,255,255,0.2)',
+                        background: menuEsteAberto ? 'rgba(255,255,255,0.35)' : 'rgba(255,255,255,0.2)',
                         border: 'none', borderRadius: '0.375rem',
                         color: 'white', cursor: 'pointer',
-                        padding: '0.25rem 0.5rem', fontSize: '0.875rem',
+                        padding: '0.2rem 0.75rem',
+                        fontSize: '1.375rem', fontWeight: '700',
+                        lineHeight: '1',
                         transition: 'background 0.2s',
                       }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.35)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.35)'}
+                      onMouseLeave={e => {
+                        if (!menuEsteAberto) e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
+                      }}
+                      title="Opções do cartão"
                     >
-                      ✏️
+                      ···
                     </button>
-                    <button
-                      onClick={() => handleExcluir(cartao.id)}
-                      title={excluindo ? 'Clique novamente para confirmar' : 'Excluir cartão'}
-                      style={{
-                        background: excluindo ? 'rgba(239,68,68,0.8)' : 'rgba(255,255,255,0.2)',
-                        border: excluindo ? '2px solid white' : 'none',
-                        borderRadius: '0.375rem',
-                        color: 'white', cursor: 'pointer',
-                        padding: '0.25rem 0.5rem', fontSize: '0.875rem',
-                        transition: 'all 0.2s',
-                        fontWeight: excluindo ? '700' : '400',
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!excluindo) e.currentTarget.style.background = 'rgba(239,68,68,0.5)';
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!excluindo) e.currentTarget.style.background = 'rgba(255,255,255,0.2)';
-                      }}
-                    >
-                      {excluindo ? '⚠️ Confirmar?' : '🗑️'}
-                    </button>
+
+                    {/* Dropdown menu */}
+                    {menuEsteAberto && (
+                      <div style={{
+                        position: 'absolute', top: '110%', right: 0,
+                        background: 'white', borderRadius: '0.5rem',
+                        boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                        border: '1px solid #e5e7eb',
+                        zIndex: 50, minWidth: '170px', overflow: 'hidden',
+                      }}>
+                        <button
+                          onClick={() => { onEditarCartao(cartao); setMenuAberto(null); }}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            width: '100%', padding: '0.75rem 1rem',
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            fontSize: '0.875rem', color: '#374151', textAlign: 'left',
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
+                          onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                        >
+                          ✏️ Editar Cartão
+                        </button>
+                        <div style={{ height: '1px', background: '#f3f4f6' }} />
+                        <button
+                          onClick={() => handleExcluirCartao(cartao.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: '0.5rem',
+                            width: '100%', padding: '0.75rem 1rem',
+                            background: excluindo ? '#fef2f2' : 'none',
+                            border: 'none', cursor: 'pointer',
+                            fontSize: '0.875rem',
+                            color: excluindo ? '#dc2626' : '#6b7280',
+                            textAlign: 'left',
+                            fontWeight: excluindo ? '700' : '400',
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; }}
+                          onMouseLeave={e => {
+                            if (!excluindo) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#6b7280'; }
+                          }}
+                        >
+                          {excluindo ? '⚠️ Confirmar?' : '🗑️ Excluir Cartão'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -270,39 +329,151 @@ export default function GestaoCartoes({
                     <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#374151', marginBottom: '0.75rem' }}>
                       Itens da Fatura:
                     </div>
-                    {itensFatura.map((item: ItemFatura) => (
-                      <div
-                        key={item.id}
-                        style={{
-                          display: 'flex', justifyContent: 'space-between',
-                          alignItems: 'center', padding: '0.5rem 0',
-                          borderBottom: '1px solid #f3f4f6', fontSize: '0.8125rem',
-                        }}
-                      >
-                        <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
-                          <div style={{
-                            fontWeight: '500', color: '#374151',
-                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                          }}>
-                            {item.descricao}
-                            {item.parcelamento && (
-                              <span style={{
-                                marginLeft: '0.5rem', fontSize: '0.75rem', color: '#6b7280',
-                                background: '#f3f4f6', padding: '0.125rem 0.375rem', borderRadius: '0.25rem',
-                              }}>
-                                {item.parcelamento.parcelaAtual}/{item.parcelamento.totalParcelas}
-                              </span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-                            {item.categoria} • {new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR')}
-                          </div>
+                    {itensFatura.map((item: ItemFatura) => {
+                      const esteItemEditando =
+                        itemEditando?.item.id === item.id &&
+                        itemEditando?.cartaoId === cartao.id;
+
+                      return (
+                        <div key={item.id}>
+                          {/* Item normal */}
+                          {!esteItemEditando && (
+                            <div style={{
+                              display: 'flex', justifyContent: 'space-between',
+                              alignItems: 'center', padding: '0.5rem 0',
+                              borderBottom: '1px solid #f3f4f6', fontSize: '0.8125rem',
+                            }}>
+                              <div style={{ flex: 1, minWidth: 0, paddingRight: '0.5rem' }}>
+                                <div style={{
+                                  fontWeight: '500', color: '#374151',
+                                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}>
+                                  {item.descricao}
+                                  {item.parcelamento && (
+                                    <span style={{
+                                      marginLeft: '0.5rem', fontSize: '0.75rem', color: '#6b7280',
+                                      background: '#f3f4f6', padding: '0.125rem 0.375rem', borderRadius: '0.25rem',
+                                    }}>
+                                      {item.parcelamento.parcelaAtual}/{item.parcelamento.totalParcelas}
+                                    </span>
+                                  )}
+                                </div>
+                                <div style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                                  {item.categoria} • {new Date(item.data + 'T00:00:00').toLocaleDateString('pt-BR')}
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
+                                <span style={{ fontWeight: '600', color: '#ef4444', marginRight: '0.25rem', fontSize: '0.875rem' }}>
+                                  {formatarMoeda(item.valor)}
+                                </span>
+                                <button
+                                  onClick={() => abrirEdicaoItem(cartao.id, item)}
+                                  title="Editar item"
+                                  style={{
+                                    background: '#f3f4f6', border: 'none', borderRadius: '0.375rem',
+                                    cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem',
+                                    transition: 'background 0.15s',
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
+                                  onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}
+                                >
+                                  ✏️
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (confirm(`Remover "${item.descricao}" da fatura?`)) {
+                                      onExcluirItemFatura(cartao.id, item.id, mesReferencia);
+                                    }
+                                  }}
+                                  title="Remover da fatura"
+                                  style={{
+                                    background: '#fef2f2', border: 'none', borderRadius: '0.375rem',
+                                    cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem',
+                                    transition: 'background 0.15s',
+                                  }}
+                                  onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+                                  onMouseLeave={e => e.currentTarget.style.background = '#fef2f2'}
+                                >
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Formulário inline de edição */}
+                          {esteItemEditando && (
+                            <div style={{
+                              padding: '0.75rem', margin: '0.25rem 0 0.5rem',
+                              background: '#f0f9ff', borderRadius: '0.5rem',
+                              border: '1px solid #bae6fd',
+                            }}>
+                              <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#0369a1', marginBottom: '0.5rem' }}>
+                                ✏️ Editando item
+                              </div>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                <input
+                                  type="text"
+                                  value={editDescricao}
+                                  onChange={e => setEditDescricao(e.target.value)}
+                                  placeholder="Descrição"
+                                  style={{
+                                    padding: '0.5rem 0.625rem', border: '1px solid #bae6fd',
+                                    borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none',
+                                    background: 'white',
+                                  }}
+                                />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                                  <input
+                                    type="number"
+                                    value={editValor}
+                                    onChange={e => setEditValor(e.target.value)}
+                                    placeholder="Valor"
+                                    style={{
+                                      padding: '0.5rem 0.625rem', border: '1px solid #bae6fd',
+                                      borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none',
+                                      background: 'white',
+                                    }}
+                                  />
+                                  <input
+                                    type="text"
+                                    value={editCategoria}
+                                    onChange={e => setEditCategoria(e.target.value)}
+                                    placeholder="Categoria"
+                                    style={{
+                                      padding: '0.5rem 0.625rem', border: '1px solid #bae6fd',
+                                      borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none',
+                                      background: 'white',
+                                    }}
+                                  />
+                                </div>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                  <button
+                                    onClick={salvarEdicaoItem}
+                                    style={{
+                                      flex: 1, padding: '0.5rem', background: '#0ea5e9',
+                                      color: 'white', border: 'none', borderRadius: '0.375rem',
+                                      fontSize: '0.8125rem', fontWeight: '600', cursor: 'pointer',
+                                    }}
+                                  >
+                                    💾 Salvar
+                                  </button>
+                                  <button
+                                    onClick={() => setItemEditando(null)}
+                                    style={{
+                                      flex: 1, padding: '0.5rem', background: '#f3f4f6',
+                                      color: '#374151', border: 'none', borderRadius: '0.375rem',
+                                      fontSize: '0.8125rem', cursor: 'pointer',
+                                    }}
+                                  >
+                                    Cancelar
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                        <div style={{ fontWeight: '600', color: '#ef4444', flexShrink: 0 }}>
-                          {formatarMoeda(item.valor)}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

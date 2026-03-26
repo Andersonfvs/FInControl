@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, browserLocalPersistence, setPersistence, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
@@ -12,29 +12,13 @@ const firebaseConfig = {
   appId: "1:109907986952:web:32778a938874f2dd05dfbd"
 };
 
-console.log('🔥 Inicializando Firebase...');
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const database = getDatabase(app);
 
-// Configurar persistência
-setPersistence(auth, browserLocalPersistence)
-  .then(() => {
-    console.log('✅ Persistência LOCAL configurada com sucesso!');
-  })
+// Garante persistência LOCAL (mantém login após F5)
+// Exportamos a promise para o dashboard poder aguardar
+export const persistenciaConfigurada = setPersistence(auth, browserLocalPersistence)
   .catch((error) => {
-    console.error('❌ ERRO ao configurar persistência:', error);
+    console.error('Erro ao configurar persistência:', error);
   });
-
-// Monitor de autenticação
-if (typeof window !== 'undefined') {
-  onAuthStateChanged(auth, (user) => {
-    if (user) {
-      console.log('✅ Usuário autenticado:', user.email);
-      console.log('📦 localStorage disponível:', !!window.localStorage);
-      console.log('🔑 Current user:', auth.currentUser?.email);
-    } else {
-      console.log('❌ Nenhum usuário autenticado');
-    }
-  });
-}
