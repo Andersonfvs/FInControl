@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { ref, set, push, get } from 'firebase/database';
+import { ref, set, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { obterCategoriasDisponiveis, obterEmoji } from '@/utils/categorias';
-import { gerarMesKey } from '@/utils/financeiro';
+import { gerarMesKey, gerarId } from '@/utils/financeiro';
 
 interface Props {
   aberto: boolean;
@@ -92,6 +92,25 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
     }
   }, [aberto]);
 
+  // CORREÇÃO: ESC fecha o modal
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onFechar();
+    };
+    if (aberto) window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, [aberto, onFechar]);
+
+  // CORREÇÃO: trava scroll do body
+  useEffect(() => {
+    if (aberto) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [aberto]);
+
   const handleSalvar = async () => {
     if (!descricao.trim() || !valor || parseFloat(valor) <= 0) {
       setErro('Preencha todos os campos corretamente');
@@ -108,7 +127,8 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
 
       if (parcelado && numParcelas > 1) {
         // Despesa parcelada
-        const valorParcela = valorNum / numParcelas;
+        // CORREÇÃO: valorParcela arredondado para 2 casas
+        const valorParcela = parseFloat((valorNum / numParcelas).toFixed(2));
         const dataBase = new Date();
 
         for (let i = 0; i < numParcelas; i++) {
@@ -117,12 +137,11 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           const mesParcela = gerarMesKey(dataParcela);
           const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${mesParcela}`);
           
-          // Buscar transações existentes
           const snapshot = await get(refMes);
           const transacoesExistentes = snapshot.exists() ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val())) : [];
 
           const novaTransacao = {
-            id: `${Date.now()}_${i}`,
+            id: gerarId(), // CORREÇÃO: era Date.now()_i, agora usa gerarId()
             tipo: 'despesa',
             descricao: `${descricao} (${i + 1}/${numParcelas})`,
             valor: valorParcela,
@@ -146,7 +165,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
         const transacoesExistentes = snapshot.exists() ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val())) : [];
 
         const novaTransacao = {
-          id: `${Date.now()}`,
+          id: gerarId(), // CORREÇÃO: era Date.now(), agora usa gerarId()
           tipo: 'despesa',
           descricao,
           valor: valorNum,

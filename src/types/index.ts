@@ -82,6 +82,7 @@ export interface ReservaEmergencia {
   transacoes: TransacaoReserva[];
   taxaCDIAnual: number;
   meta?: number;
+  ultimoCreditoCDI?: string; // ISO date — controla quando foi o último crédito automático
 }
 
 export interface CategoriaCustomizada {

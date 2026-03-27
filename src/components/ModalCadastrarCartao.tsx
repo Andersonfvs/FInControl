@@ -60,6 +60,16 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aberto, onFechar]);
 
+  // Trava scroll do body quando modal está aberto
+  useEffect(() => {
+    if (aberto) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [aberto]);
+
   const handleSalvar = () => {
     if (!nome || !limite || !diaFechamento || !diaVencimento) {
       alert('Preencha todos os campos!');
@@ -92,8 +102,10 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
         top: 0, left: 0, right: 0, bottom: 0,
         background: 'rgba(0,0,0,0.5)',
         zIndex: 1000,
-        overflow: 'auto',
-        padding: '40px 20px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
       }}
     >
       <div
@@ -103,17 +115,21 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
           borderRadius: '16px',
           width: '100%',
           maxWidth: '500px',
-          margin: '0 auto',
+          // CORREÇÃO SCROLL: maxHeight + flex para header/footer fixos e conteúdo scrollável
+          maxHeight: '90vh',
+          display: 'flex',
+          flexDirection: 'column',
           boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
         }}
       >
-        {/* HEADER */}
+        {/* HEADER — fixo */}
         <div style={{
           padding: '20px 24px',
           borderBottom: '1px solid #e5e7eb',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
+          flexShrink: 0,
         }}>
           <h3 style={{ fontSize: '20px', fontWeight: '700', color: '#111827', margin: 0 }}>
             {isEdicao ? '✏️ Editar Cartão' : '💳 Cadastrar Cartão'}
@@ -133,29 +149,27 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
           </button>
         </div>
 
-        {/* CONTEÚDO */}
-        <div style={{ padding: '24px' }}>
-          {/* Preview */}
+        {/* CONTEÚDO — scrollável */}
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }}>
+          {/* CORREÇÃO PREVIEW: removido minHeight fixo, padding reduzido */}
           <div style={{
             background: cor,
             borderRadius: '12px',
-            padding: '24px',
+            padding: '16px 20px',
             marginBottom: '24px',
             color: 'white',
-            minHeight: '140px',
             display: 'flex',
             flexDirection: 'column',
-            justifyContent: 'space-between',
-            boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+            gap: '8px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.15)',
           }}>
-            <div style={{ fontSize: '14px', opacity: 0.9 }}>{bandeira}</div>
-            <div>
-              <div style={{ fontSize: '20px', fontWeight: '700', marginBottom: '8px' }}>
-                {nome || 'Nome do Cartão'}
-              </div>
-              <div style={{ fontSize: '14px', opacity: 0.9 }}>
-                Limite: R$ {limite || '0,00'}
-              </div>
+            <div style={{ fontSize: '12px', opacity: 0.85 }}>{bandeira}</div>
+            <div style={{ fontSize: '16px', fontWeight: '700' }}>
+              {nome || 'Nome do Cartão'}
+            </div>
+            <div style={{ fontSize: '12px', opacity: 0.85 }}>
+              Limite: R$ {limite || '0,00'}
+              {diaVencimento && <span> · Vence dia {diaVencimento}</span>}
             </div>
           </div>
 
@@ -171,6 +185,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 placeholder="Ex: Nubank, Inter, C6..."
+                autoFocus
                 style={{
                   width: '100%', padding: '12px', border: '2px solid #e5e7eb',
                   borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box',
@@ -211,6 +226,8 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
                     width: '100%', padding: '12px', border: '2px solid #e5e7eb',
                     borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
+                  onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
+                  onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                 />
               </div>
             </div>
@@ -230,6 +247,8 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
                     width: '100%', padding: '12px', border: '2px solid #e5e7eb',
                     borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
+                  onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
+                  onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                 />
               </div>
               <div>
@@ -245,6 +264,8 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
                     width: '100%', padding: '12px', border: '2px solid #e5e7eb',
                     borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
                   }}
+                  onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
+                  onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                 />
               </div>
             </div>
@@ -279,7 +300,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
           </div>
         </div>
 
-        {/* FOOTER */}
+        {/* FOOTER — fixo */}
         <div style={{
           padding: '20px 24px',
           borderTop: '1px solid #e5e7eb',
@@ -287,6 +308,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
           gap: '12px',
           background: 'white',
           borderRadius: '0 0 16px 16px',
+          flexShrink: 0,
         }}>
           <button
             type="button"

@@ -42,7 +42,6 @@ export default function DashboardPage() {
   const [filtro, setFiltro] = useState('todos');
   const [tabAtiva, setTabAtiva] = useState('dashboard');
 
-  // Modais
   const [modalReceitaAberto, setModalReceitaAberto] = useState(false);
   const [modalDespesaAberto, setModalDespesaAberto] = useState(false);
   const [modalCartaoAberto, setModalCartaoAberto] = useState(false);
@@ -51,12 +50,10 @@ export default function DashboardPage() {
   const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
   const [cartaoEditando, setCartaoEditando] = useState<CartaoCredito | null>(null);
 
-  // Atalhos Rápidos
   const [categoriaPreenchida, setCategoriaPreenchida] = useState('');
   const [descricaoPreenchida, setDescricaoPreenchida] = useState('');
   const [dadosIniciais, setDadosIniciais] = useState<DadosInputMagico | null>(null);
 
-  // Toast
   const [toast, setToast] = useState({ visivel: false, mensagem: '', tipo: 'sucesso' as ToastTipo });
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
@@ -78,7 +75,7 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // ─── Firebase Realtime Database ───────────────────────────────────────────
+  // ─── Firebase ─────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!usuario) return;
     const dbRef = ref(database, `usuarios/${usuario.uid}`);
@@ -86,7 +83,6 @@ export default function DashboardPage() {
       if (!snapshot.exists()) return;
       const dados = snapshot.val();
 
-      // ── Migração: dadosPorMes sem id ──────────────────────────────────────
       const dadosPorMesOriginal = dados.dadosPorMes || {};
       let precisaMigrar = false;
       const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
@@ -101,7 +97,6 @@ export default function DashboardPage() {
       }
       if (precisaMigrar) set(ref(database, `usuarios/${usuario.uid}/dadosPorMes`), dadosPorMesMigrado).catch(console.error);
 
-      // ── Migração: faturas sem campo itens ─────────────────────────────────
       const faturasOriginal = dados.faturas || {};
       let precisaMigrarFaturas = false;
       const faturasMigradas: { [mesKey: string]: any[] } = {};
@@ -111,27 +106,19 @@ export default function DashboardPage() {
           : Object.values(faturasOriginal[mesKey] || {});
         faturasMigradas[mesKey] = lista.map((f: any) => {
           if (!f) return f;
-          if (!f.itens) {
-            precisaMigrarFaturas = true;
-            return { ...f, itens: [], totalFatura: f.totalFatura || 0 };
-          }
-          if (!Array.isArray(f.itens)) {
-            precisaMigrarFaturas = true;
-            return { ...f, itens: Object.values(f.itens || {}) };
-          }
+          if (!f.itens) { precisaMigrarFaturas = true; return { ...f, itens: [], totalFatura: f.totalFatura || 0 }; }
+          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) }; }
           return f;
         });
       }
       if (precisaMigrarFaturas) set(ref(database, `usuarios/${usuario.uid}/faturas`), faturasMigradas).catch(console.error);
 
-      // ── Reserva de emergência — garante estrutura mínima ──────────────────
       const reservaRaw = dados.reservaEmergencia || {};
       const reservaNormalizada = {
-        transacoes: Array.isArray(reservaRaw.transacoes)
-          ? reservaRaw.transacoes
-          : Object.values(reservaRaw.transacoes || {}),
+        transacoes: Array.isArray(reservaRaw.transacoes) ? reservaRaw.transacoes : Object.values(reservaRaw.transacoes || {}),
         taxaCDIAnual: reservaRaw.taxaCDIAnual || 14.9,
         meta: reservaRaw.meta,
+        ultimoCreditoCDI: reservaRaw.ultimoCreditoCDI,
       };
 
       setSistema({
@@ -354,6 +341,17 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao adicionar compra', 'erro'); }
   };
 
+  // ─── Lançar itens importados do PDF ──────────────────────────────────────
+  const handleLancarItensCSV = useCallback(async (cartaoId: string, itens: ItemFatura[]) => {
+    if (!usuario) return;
+    try {
+      await handleAdicionarCompra(itens);
+      const total = itens.reduce((s, i) => s + i.valor, 0);
+      showToast(`✅ ${itens.length} item(s) lançado(s) — ${formatarMoeda(total)}`, 'sucesso');
+    } catch { showToast('Erro ao lançar itens', 'erro'); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usuario, sistema.faturas]);
+
   const handlePagarFatura = async (cartaoId: string, mesKey: string) => {
     if (!usuario) return;
     try {
@@ -383,12 +381,10 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
   };
 
-  // ─── Reserva de Emergência ────────────────────────────────────────────────
   const handleSalvarReserva = async (reserva: any) => {
     if (!usuario) return;
     try {
       await set(ref(database, `usuarios/${usuario.uid}/reservaEmergencia`), reserva);
-      showToast('Reserva atualizada!', 'sucesso');
     } catch { showToast('Erro ao salvar reserva', 'erro'); }
   };
 
@@ -508,7 +504,6 @@ export default function DashboardPage() {
 
           {tabAtiva === 'dashboard' && (
             <div>
-              {/* ── Cards de resumo ── */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
@@ -556,19 +551,13 @@ export default function DashboardPage() {
               <AlertaFaturas cartoes={sistema.cartoes} faturas={sistema.faturas} />
               <InsightsInteligentes transacoesAtual={transacoes} transacoesAnterior={transacoesAnterior} />
 
-              {/* ── Gráficos ── */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '1.5rem', marginBottom: '1.5rem' }}>
                 <GraficoPizza categorias={calcularCategorias()} />
                 <GraficoEvolucao dados={calcularEvolucao()} />
               </div>
 
-              {/* ── Reserva de Emergência ── */}
-              <ReservaEmergencia
-              reserva={sistema.reservaEmergencia as any}
-                onSalvar={handleSalvarReserva}
-              />
+              <ReservaEmergencia reserva={sistema.reservaEmergencia as any} onSalvar={handleSalvarReserva} />
 
-              {/* ── Top 5 Maiores Gastos ── */}
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
                 {transacoes.filter(t => t.tipo === 'despesa').sort((a, b) => b.valor - a.valor).slice(0, 5).map((t, i) => (
@@ -618,6 +607,7 @@ export default function DashboardPage() {
               cartoes={sistema.cartoes}
               faturas={sistema.faturas}
               mesReferencia={mesKey}
+              transacoesPorMes={sistema.dadosPorMes}
               onCadastrarCartao={() => { setCartaoEditando(null); setModalCartaoAberto(true); }}
               onAdicionarCompra={(id) => { setCartaoSelecionadoId(id); setModalCompraAberto(true); }}
               onPagarFatura={handlePagarFatura}
@@ -625,6 +615,7 @@ export default function DashboardPage() {
               onExcluirCartao={handleExcluirCartao}
               onExcluirItemFatura={handleExcluirItemFatura}
               onEditarItemFatura={handleEditarItemFatura}
+              onLancarItensCSV={handleLancarItensCSV}
             />
           )}
 

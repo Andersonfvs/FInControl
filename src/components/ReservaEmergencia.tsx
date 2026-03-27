@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { formatarMoeda, formatarDataCurta } from '@/utils/financeiro';
 
 interface TransacaoReserva {
@@ -20,6 +20,7 @@ interface ReservaEmergenciaData {
   transacoes: TransacaoReserva[];
   taxaCDIAnual: number;
   meta?: number;
+  ultimoCreditoCDI?: string; // ISO date — controla quando foi o último crédito automático
 }
 
 interface Props {
@@ -30,7 +31,6 @@ interface Props {
 // ─── Constantes fiscais ───────────────────────────────────────────────────────
 const DIAS_UTEIS_ANO = 252;
 
-// IOF regressivo — índice = dia corrido - 1 (dia 1 → 96%, dia 30 → 0%)
 const IOF_TABLE = [
   0.96, 0.93, 0.90, 0.86, 0.83, 0.80, 0.76, 0.73, 0.70, 0.66,
   0.63, 0.60, 0.56, 0.53, 0.50, 0.46, 0.43, 0.40, 0.36, 0.33,
@@ -40,12 +40,11 @@ const IOF_TABLE = [
 // ─── Funções de cálculo ───────────────────────────────────────────────────────
 function calcularDiasCorridos(dataStr: string, hoje = new Date()): number {
   const inicio = new Date(dataStr + 'T00:00:00');
-  hoje = new Date(hoje); hoje.setHours(0, 0, 0, 0);
-  return Math.max(0, Math.floor((hoje.getTime() - inicio.getTime()) / 86400000));
+  const fim = new Date(hoje); fim.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.floor((fim.getTime() - inicio.getTime()) / 86400000));
 }
 
 function calcularDiasUteis(diasCorridos: number): number {
-  // Aproximação: 252 dias úteis / 365 dias corridos
   return Math.round(diasCorridos * DIAS_UTEIS_ANO / 365);
 }
 
@@ -76,27 +75,20 @@ function descricaoFaixaIR(diasCorridos: number): string {
 interface LoteCDI {
   id: string;
   data: string;
-  principal: number; // principal restante neste lote
+  principal: number;
 }
 
 interface SaldoCalculado {
-  saldoBruto: number;       // principal + rendimentos (antes de impostos)
-  saldoPrincipal: number;   // só o principal investido
+  saldoBruto: number;
+  saldoPrincipal: number;
   rendimentoAcumulado: number;
   taxaDiaria: number;
   diasMediosPonderados: number;
   lotes: LoteCDI[];
 }
 
-/**
- * Calcula o saldo em tempo real usando juros compostos diários por CDI.
- * Cada depósito rende individualmente desde sua data.
- * Retiradas consomem os lotes mais antigos primeiro (FIFO).
- */
 function calcularSaldo(transacoes: TransacaoReserva[], taxaAnual: number): SaldoCalculado {
   const lotes: LoteCDI[] = [];
-
-  // Processar em ordem cronológica
   const ordenadas = [...transacoes].sort(
     (a, b) => new Date(a.data).getTime() - new Date(b.data).getTime()
   );
@@ -104,8 +96,7 @@ function calcularSaldo(transacoes: TransacaoReserva[], taxaAnual: number): Saldo
   for (const t of ordenadas) {
     if (t.tipo === 'deposito') {
       lotes.push({ id: t.id, data: t.data, principal: t.valor });
-    } else if (t.tipo === 'retirada') {
-      // Consome lotes FIFO pelo principal (simplificação prática)
+    } else {
       let restante = t.valor;
       for (const lote of lotes) {
         if (restante <= 0 || lote.principal <= 0) continue;
@@ -142,35 +133,44 @@ function calcularSaldo(transacoes: TransacaoReserva[], taxaAnual: number): Saldo
   };
 }
 
-/**
- * Simula impostos sobre uma retirada de `valorRetirada`.
- * Usa a idade média ponderada dos lotes para calcular IOF e IR.
- */
-function simularImpostosRetirada(
-  valorRetirada: number,
-  saldo: SaldoCalculado,
-) {
+function simularImpostosRetirada(valorRetirada: number, saldo: SaldoCalculado) {
   if (saldo.saldoBruto <= 0) return null;
-
   const ratioRendimento = saldo.rendimentoAcumulado / saldo.saldoBruto;
   const rendimentoBruto = valorRetirada * ratioRendimento;
   const diasCorridos = Math.round(saldo.diasMediosPonderados);
-
   const iof = rendimentoBruto * aliquotaIOF(diasCorridos);
   const baseIR = rendimentoBruto - iof;
   const ir = baseIR * aliquotaIR(diasCorridos);
   const totalImpostos = iof + ir;
   const valorLiquido = valorRetirada - totalImpostos;
+  return { rendimentoBruto, iof, ir, totalImpostos, valorLiquido, diasCorridos, aliquotaIRDesc: descricaoFaixaIR(diasCorridos) };
+}
 
-  return {
-    rendimentoBruto,
-    iof,
-    ir,
-    totalImpostos,
-    valorLiquido,
-    diasCorridos,
-    aliquotaIRDesc: descricaoFaixaIR(diasCorridos),
-  };
+// ─── Crédito automático CDI ───────────────────────────────────────────────────
+/**
+ * Calcula o rendimento de CADA lote de depósito entre duas datas,
+ * gerando uma única transação de "📈 Rendimento CDI" com o total.
+ * Retorna null se não há saldo ou dias a creditar.
+ */
+function calcularRendimentoPeriodo(
+  transacoes: TransacaoReserva[],
+  taxaAnual: number,
+  dataInicio: string,
+  dataFim: string,
+): number | null {
+  if (!dataInicio) return null;
+  const diasCorridos = calcularDiasCorridos(dataInicio, new Date(dataFim + 'T00:00:00'));
+  if (diasCorridos <= 0) return null;
+
+  // Saldo na data de início (sem contar o rendimento do período)
+  const saldoInicio = calcularSaldo(transacoes, taxaAnual);
+  if (saldoInicio.saldoBruto <= 0) return null;
+
+  const taxaDiaria = taxaDiariaCDI(taxaAnual);
+  const diasUteis = calcularDiasUteis(diasCorridos);
+  // Rendimento do período = saldo * ((1+d)^n - 1)
+  const rendimento = saldoInicio.saldoBruto * (Math.pow(1 + taxaDiaria, diasUteis) - 1);
+  return rendimento > 0.001 ? rendimento : null; // ignora valores insignificantes
 }
 
 // ─── Componente ───────────────────────────────────────────────────────────────
@@ -184,15 +184,52 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
   const [metaInput, setMetaInput] = useState(String(reserva.meta || ''));
   const [editandoCDI, setEditandoCDI] = useState(false);
   const [cdiInput, setCdiInput] = useState(String(reserva.taxaCDIAnual || 14.9));
+  const creditouRef = useRef(false); // evita crédito duplo na mesma sessão
 
   const transacoes = reserva.transacoes || [];
   const taxaCDI = reserva.taxaCDIAnual || 14.9;
   const meta = reserva.meta || 0;
 
-  // Saldo calculado em tempo real com juros compostos CDI
+  // ── Crédito automático de CDI ao abrir o app ──────────────────────────────
+  useEffect(() => {
+    if (creditouRef.current) return; // já rodou nesta sessão
+    if (transacoes.length === 0) return; // sem depósitos
+
+    const hoje = new Date().toISOString().split('T')[0];
+    const ultimoCredito = reserva.ultimoCreditoCDI;
+
+    // Só credita se nunca creditou antes ou se já passou 1 dia
+    if (ultimoCredito && ultimoCredito >= hoje) return;
+
+    const dataInicio = ultimoCredito || transacoes
+      .filter(t => t.tipo === 'deposito')
+      .sort((a, b) => a.data.localeCompare(b.data))[0]?.data;
+
+    if (!dataInicio || dataInicio >= hoje) return;
+
+    const rendimento = calcularRendimentoPeriodo(transacoes, taxaCDI, dataInicio, hoje);
+    if (!rendimento) return;
+
+    creditouRef.current = true;
+
+    const novaTransacao: TransacaoReserva = {
+      id: `cdi_${Date.now()}`,
+      data: hoje,
+      tipo: 'deposito',
+      valor: parseFloat(rendimento.toFixed(2)),
+      descricao: `📈 Rendimento CDI (${taxaCDI}% a.a.)`,
+    };
+
+    onSalvar({
+      ...reserva,
+      transacoes: [...transacoes, novaTransacao],
+      ultimoCreditoCDI: hoje,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // roda apenas uma vez ao montar
+
   const saldo = useMemo(() => calcularSaldo(transacoes, taxaCDI), [transacoes, taxaCDI]);
 
-  // Simulação de impostos para o valor digitado na retirada
   const valorRetirada = parseFloat(valorInput.replace(',', '.')) || 0;
   const simulacaoImpostos = tipoMovimento === 'retirada' && valorRetirada > 0
     ? simularImpostosRetirada(valorRetirada, saldo)
@@ -201,7 +238,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
   const percentualMeta = meta > 0 ? Math.min((saldo.saldoBruto / meta) * 100, 100) : 0;
   const faltaParaMeta = Math.max(meta - saldo.saldoBruto, 0);
   const corBarra = percentualMeta >= 100 ? '#10b981' : percentualMeta >= 50 ? '#f59e0b' : '#ef4444';
-  const rendimentoMensalEstimado = saldo.saldoBruto * (Math.pow(1 + saldo.taxaDiaria, 21) - 1); // ~21 dias úteis/mês
+  const rendimentoMensalEstimado = saldo.saldoBruto * (Math.pow(1 + saldo.taxaDiaria, 21) - 1);
   const rendimentoAnualEstimado = saldo.saldoBruto * (Math.pow(1 + saldo.taxaDiaria, DIAS_UTEIS_ANO) - 1);
 
   const handleMovimento = () => {
@@ -211,14 +248,12 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
       alert('Valor maior que o saldo disponível!');
       return;
     }
-
     const novaTransacao: TransacaoReserva = {
       id: `${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       data: new Date().toISOString().split('T')[0],
       tipo: tipoMovimento,
       valor,
       descricao: descricaoInput.trim() || (tipoMovimento === 'deposito' ? 'Depósito' : 'Retirada'),
-      // Para retiradas, salva os impostos calculados para referência futura
       ...(tipoMovimento === 'retirada' && simulacaoImpostos ? {
         valorLiquido: simulacaoImpostos.valorLiquido,
         rendimentoBruto: simulacaoImpostos.rendimentoBruto,
@@ -227,7 +262,6 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
         diasCorridos: simulacaoImpostos.diasCorridos,
       } : {}),
     };
-
     onSalvar({ ...reserva, transacoes: [...transacoes, novaTransacao] });
     setValorInput('');
     setDescricaoInput('');
@@ -255,7 +289,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
     <>
       <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', marginBottom: '1.5rem', overflow: 'hidden' }}>
 
-        {/* ── Header clicável ── */}
+        {/* ── Header ── */}
         <div onClick={() => setExpandido(!expandido)} style={{ padding: '1.25rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
             <span style={{ fontSize: '1.5rem' }}>🛡️</span>
@@ -272,9 +306,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                 {formatarMoeda(saldo.saldoBruto)}
               </div>
               {saldo.rendimentoAcumulado > 0 && (
-                <div style={{ fontSize: '0.7rem', color: '#10b981' }}>
-                  +{formatarMoeda(saldo.rendimentoAcumulado)} rendimento
-                </div>
+                <div style={{ fontSize: '0.7rem', color: '#10b981' }}>+{formatarMoeda(saldo.rendimentoAcumulado)} rendimento</div>
               )}
             </div>
             <span style={{ color: '#9ca3af', fontSize: '1rem' }}>{expandido ? '▲' : '▼'}</span>
@@ -301,7 +333,6 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
             {/* Grid de métricas */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
 
-              {/* Meta */}
               <div style={{ background: '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>🎯 Meta</div>
                 {editandoMeta ? (
@@ -316,7 +347,6 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                 )}
               </div>
 
-              {/* Falta para meta */}
               {meta > 0 && (
                 <div style={{ background: '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
                   <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>📈 Falta para meta</div>
@@ -326,7 +356,6 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                 </div>
               )}
 
-              {/* Taxa CDI */}
               <div style={{ background: '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>📊 Taxa CDI/ano</div>
                 {editandoCDI ? (
@@ -342,38 +371,33 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                 )}
               </div>
 
-              {/* Rendimento acumulado */}
               <div style={{ background: saldo.rendimentoAcumulado > 0 ? '#f0fdf4' : '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>💹 Rendimento acumulado</div>
                 <div style={{ fontSize: '1rem', fontWeight: '700', color: '#10b981' }}>+{formatarMoeda(saldo.rendimentoAcumulado)}</div>
                 <div style={{ fontSize: '0.65rem', color: '#6b7280' }}>≈ {formatarMoeda(rendimentoMensalEstimado)}/mês</div>
               </div>
 
-              {/* Projeção anual */}
               <div style={{ background: '#f0fdf4', borderRadius: '0.5rem', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>🗓️ Projeção anual</div>
                 <div style={{ fontSize: '1rem', fontWeight: '700', color: '#10b981' }}>+{formatarMoeda(rendimentoAnualEstimado)}</div>
                 <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>juros compostos CDI</div>
               </div>
 
-              {/* Principal investido */}
               <div style={{ background: '#f9fafb', borderRadius: '0.5rem', padding: '1rem' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280', marginBottom: '0.25rem' }}>🏦 Principal investido</div>
                 <div style={{ fontSize: '1rem', fontWeight: '700', color: '#374151' }}>{formatarMoeda(saldo.saldoPrincipal)}</div>
                 <div style={{ fontSize: '0.65rem', color: '#9ca3af' }}>
-                  {saldo.diasMediosPonderados > 0 ? `~${Math.round(saldo.diasMediosPonderados)} dias investidos` : 'sem depósitos'}
+                  {reserva.ultimoCreditoCDI ? `Último crédito: ${formatarDataCurta(reserva.ultimoCreditoCDI)}` : 'sem depósitos'}
                 </div>
               </div>
             </div>
 
-            {/* Aviso sobre impostos */}
             {saldo.saldoPrincipal > 0 && (
               <div style={{ background: '#fefce8', border: '1px solid #fde68a', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1.5rem', fontSize: '0.78rem', color: '#92400e' }}>
-                ⚠️ <strong>Impostos estimados na retirada:</strong> IOF (nos primeiros 30 dias, regressivo de 96% a 0%) + IR ({descricaoFaixaIR(Math.round(saldo.diasMediosPonderados))}). Incidem apenas sobre o rendimento, não sobre o principal.
+                ⚠️ <strong>Impostos estimados na retirada:</strong> IOF (primeiros 30 dias, regressivo) + IR ({descricaoFaixaIR(Math.round(saldo.diasMediosPonderados))}). Incidem apenas sobre o rendimento.
               </div>
             )}
 
-            {/* Botões */}
             <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem' }}>
               <button onClick={() => { setTipoMovimento('deposito'); setValorInput(''); setDescricaoInput(''); setModalAberto(true); }}
                 style={{ flex: 1, padding: '0.625rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
@@ -386,7 +410,6 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
               </button>
             </div>
 
-            {/* Histórico */}
             {transacoes.length > 0 ? (
               <div>
                 <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Histórico</div>
@@ -394,14 +417,14 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                   {[...transacoes].reverse().slice(0, 15).map(t => (
                     <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.75rem', background: t.tipo === 'deposito' ? '#f0fdf4' : '#fef2f2', borderRadius: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
-                        <span>{t.tipo === 'deposito' ? '⬆️' : '⬇️'}</span>
+                        <span>{t.tipo === 'deposito' ? (t.descricao.includes('Rendimento') ? '📈' : '⬆️') : '⬇️'}</span>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descricao}</div>
                           <div style={{ fontSize: '0.68rem', color: '#9ca3af' }}>
                             {formatarDataCurta(t.data)}
                             {t.tipo === 'retirada' && t.iof !== undefined && (
                               <span style={{ marginLeft: '0.5rem', color: '#f59e0b' }}>
-                                IOF {formatarMoeda(t.iof)} · IR {formatarMoeda(t.ir || 0)} · líquido {formatarMoeda(t.valorLiquido || t.valor)}
+                                IOF {formatarMoeda(t.iof)} · IR {formatarMoeda(t.ir || 0)} · líq. {formatarMoeda(t.valorLiquido || t.valor)}
                               </span>
                             )}
                           </div>
@@ -426,7 +449,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
         )}
       </div>
 
-      {/* ── Modal de depósito / retirada ── */}
+      {/* ── Modal ── */}
       {modalAberto && (
         <div onClick={() => setModalAberto(false)} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
           <div onClick={e => e.stopPropagation()} style={{ background: 'white', borderRadius: '0.75rem', width: '100%', maxWidth: '420px', padding: '1.5rem' }}>
@@ -440,9 +463,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
             {tipoMovimento === 'retirada' && (
               <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.5rem', padding: '0.75rem', marginBottom: '1rem', fontSize: '0.8rem', color: '#991b1b' }}>
                 ⚠️ Saldo disponível: <strong>{formatarMoeda(saldo.saldoBruto)}</strong>
-                {saldo.rendimentoAcumulado > 0 && (
-                  <span> (principal {formatarMoeda(saldo.saldoPrincipal)} + rendimento {formatarMoeda(saldo.rendimentoAcumulado)})</span>
-                )}
+                {saldo.rendimentoAcumulado > 0 && <span> (principal {formatarMoeda(saldo.saldoPrincipal)} + rendimento {formatarMoeda(saldo.rendimentoAcumulado)})</span>}
               </div>
             )}
 
@@ -458,32 +479,16 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
                 style={{ width: '100%', padding: '0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem', boxSizing: 'border-box' }} />
             </div>
 
-            {/* Simulação de impostos na retirada */}
             {tipoMovimento === 'retirada' && simulacaoImpostos && valorRetirada > 0 && (
               <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.5rem', padding: '1rem', marginBottom: '1.25rem', fontSize: '0.8rem' }}>
                 <div style={{ fontWeight: '700', color: '#92400e', marginBottom: '0.5rem' }}>📊 Simulação de impostos</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.3rem', color: '#374151' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Valor bruto</span>
-                    <span>{formatarMoeda(valorRetirada)}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Rendimento na retirada</span>
-                    <span style={{ color: '#10b981' }}>+{formatarMoeda(simulacaoImpostos.rendimentoBruto)}</span>
-                  </div>
-                  {simulacaoImpostos.iof > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span>IOF ({simulacaoImpostos.diasCorridos} dias)</span>
-                      <span style={{ color: '#ef4444' }}>-{formatarMoeda(simulacaoImpostos.iof)}</span>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>IR ({simulacaoImpostos.aliquotaIRDesc})</span>
-                    <span style={{ color: '#ef4444' }}>-{formatarMoeda(simulacaoImpostos.ir)}</span>
-                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Valor bruto</span><span>{formatarMoeda(valorRetirada)}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Rendimento</span><span style={{ color: '#10b981' }}>+{formatarMoeda(simulacaoImpostos.rendimentoBruto)}</span></div>
+                  {simulacaoImpostos.iof > 0 && <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IOF ({simulacaoImpostos.diasCorridos} dias)</span><span style={{ color: '#ef4444' }}>-{formatarMoeda(simulacaoImpostos.iof)}</span></div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>IR ({simulacaoImpostos.aliquotaIRDesc})</span><span style={{ color: '#ef4444' }}>-{formatarMoeda(simulacaoImpostos.ir)}</span></div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #fde68a', paddingTop: '0.3rem', fontWeight: '700' }}>
-                    <span>Você recebe</span>
-                    <span style={{ color: '#10b981', fontSize: '0.9rem' }}>{formatarMoeda(simulacaoImpostos.valorLiquido)}</span>
+                    <span>Você recebe</span><span style={{ color: '#10b981', fontSize: '0.9rem' }}>{formatarMoeda(simulacaoImpostos.valorLiquido)}</span>
                   </div>
                 </div>
               </div>
@@ -495,7 +500,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
               </button>
               <button onClick={handleMovimento} disabled={!valorInput || valorRetirada <= 0}
                 style={{ flex: 1, padding: '0.75rem', background: tipoMovimento === 'deposito' ? '#10b981' : '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: !valorInput || valorRetirada <= 0 ? 'not-allowed' : 'pointer', opacity: !valorInput || valorRetirada <= 0 ? 0.5 : 1 }}>
-                {tipoMovimento === 'deposito' ? 'Depositar' : `Retirar ${simulacaoImpostos ? `(líq. ${formatarMoeda(simulacaoImpostos.valorLiquido)})` : ''}`}
+                {tipoMovimento === 'deposito' ? 'Depositar' : `Retirar${simulacaoImpostos ? ` (líq. ${formatarMoeda(simulacaoImpostos.valorLiquido)})` : ''}`}
               </button>
             </div>
           </div>
