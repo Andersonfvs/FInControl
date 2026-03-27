@@ -199,6 +199,8 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao atualizar transação', 'erro'); }
   };
 
+  // CORREÇÃO: dataPagamento: undefined faz Firebase rejeitar o write inteiro.
+  // Usamos destructuring para remover o campo ao invés de setar undefined.
   const handleExcluir = async (id: string) => {
     if (!usuario) return;
     try {
@@ -206,11 +208,13 @@ export default function DashboardPage() {
       const transacoes = sistema.dadosPorMes[mesKey] || [];
       const transacao = transacoes.find(t => t.id === id);
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
-        const novasFaturas = { ...sistema.faturas };
+        const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
         if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = novasFaturas[mesKey].map(f =>
-            f.cartaoId === transacao.cartaoId ? { ...f, paga: false, dataPagamento: undefined } : f
-          );
+          novasFaturas[mesKey] = novasFaturas[mesKey].map((f: any) => {
+            if (f.cartaoId !== transacao.cartaoId) return f;
+            const { dataPagamento, ...resto } = f;
+            return { ...resto, paga: false };
+          });
           await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
         }
         showToast('Pagamento removido — fatura voltou para pendente!', 'aviso');
@@ -290,10 +294,12 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao editar item', 'erro'); }
   };
 
+  // CORREÇÃO: deep copy via JSON.parse/stringify remove undefined e evita
+  // mutation do state, que causava o Firebase rejeitar o write silenciosamente.
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
-      const novasFaturas = { ...sistema.faturas };
+      const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
       const porMes: { [k: string]: ItemFatura[] } = {};
       itens.forEach(item => {
         const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
@@ -304,10 +310,10 @@ export default function DashboardPage() {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find(f => f.cartaoId === cartaoId);
+        const existente = novasFaturas[mesKey].find((f: any) => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens.push(...itensDoMes);
-          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
+          existente.totalFatura = existente.itens.reduce((s: number, i: any) => s + i.valor, 0);
         } else {
           novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
         }

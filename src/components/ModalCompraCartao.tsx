@@ -4,6 +4,13 @@ import { useState } from 'react';
 import { ItemFatura } from '@/types';
 import { gerarId, formatarMoeda } from '@/utils/financeiro';
 
+const CATEGORIAS_CARTAO = [
+  'Alimentação', 'Mercado', 'Restaurante', 'Transporte', 'Combustível',
+  'Saúde', 'Farmácia', 'Educação', 'Lazer', 'Streaming',
+  'Vestuário', 'Eletrônicos', 'Casa', 'Beleza', 'Pet',
+  'Viagem', 'Serviços', 'Compras Online', 'Outras Despesas',
+];
+
 interface Props {
   aberto: boolean;
   cartaoId: string;
@@ -22,7 +29,7 @@ export default function ModalCompraCartao({
   usuarioNome
 }: Props) {
   const [data, setData] = useState('');
-  const [categoria, setCategoria] = useState('');
+  const [categoria, setCategoria] = useState('Alimentação');
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
   const [parcelas, setParcelas] = useState('1');
@@ -67,7 +74,6 @@ export default function ModalCompraCartao({
           dataBase.setMonth(dataBase.getMonth() + i);
           const dataFormatada = dataBase.toISOString().split('T')[0];
 
-          // CORREÇÃO: parcelas e parcelaAtual são campos obrigatórios do tipo ItemFatura
           const itemBase: ItemFatura = {
             id: gerarId(),
             cartaoId,
@@ -146,7 +152,7 @@ export default function ModalCompraCartao({
 
       alert('✅ Compra adicionada com sucesso!');
       setData('');
-      setCategoria('');
+      setCategoria('Alimentação');
       setDescricao('');
       setValor('');
       setParcelas('1');
@@ -256,7 +262,8 @@ export default function ModalCompraCartao({
                 padding: '0.625rem',
                 border: '1px solid #e5e7eb',
                 borderRadius: '0.5rem',
-                fontSize: '0.875rem'
+                fontSize: '0.875rem',
+                boxSizing: 'border-box',
               }}
             />
           </div>
@@ -271,9 +278,7 @@ export default function ModalCompraCartao({
             }}>
               Categoria
             </label>
-            <input
-              type="text"
-              placeholder="Ex: Alimentação"
+            <select
               value={categoria}
               onChange={(e) => setCategoria(e.target.value)}
               required
@@ -282,9 +287,15 @@ export default function ModalCompraCartao({
                 padding: '0.625rem',
                 border: '1px solid #e5e7eb',
                 borderRadius: '0.5rem',
-                fontSize: '0.875rem'
+                fontSize: '0.875rem',
+                boxSizing: 'border-box',
+                background: 'white',
               }}
-            />
+            >
+              {CATEGORIAS_CARTAO.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
 
           <div style={{ marginBottom: '1rem' }}>
@@ -308,7 +319,8 @@ export default function ModalCompraCartao({
                 padding: '0.625rem',
                 border: '1px solid #e5e7eb',
                 borderRadius: '0.5rem',
-                fontSize: '0.875rem'
+                fontSize: '0.875rem',
+                boxSizing: 'border-box',
               }}
             />
           </div>
@@ -340,7 +352,8 @@ export default function ModalCompraCartao({
                   padding: '0.625rem',
                   border: '1px solid #e5e7eb',
                   borderRadius: '0.5rem',
-                  fontSize: '0.875rem'
+                  fontSize: '0.875rem',
+                  boxSizing: 'border-box',
                 }}
               />
             </div>
@@ -365,7 +378,8 @@ export default function ModalCompraCartao({
                   padding: '0.625rem',
                   border: '1px solid #e5e7eb',
                   borderRadius: '0.5rem',
-                  fontSize: '0.875rem'
+                  fontSize: '0.875rem',
+                  boxSizing: 'border-box',
                 }}
               />
             </div>
@@ -407,7 +421,8 @@ export default function ModalCompraCartao({
                   padding: '0.625rem',
                   border: '1px solid #e5e7eb',
                   borderRadius: '0.5rem',
-                  fontSize: '0.875rem'
+                  fontSize: '0.875rem',
+                  boxSizing: 'border-box',
                 }}
               >
                 <option value="Anderson Ferreira">Anderson Ferreira</option>
