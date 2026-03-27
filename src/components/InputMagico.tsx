@@ -1,15 +1,17 @@
 'use client';
 
 import { useState } from 'react';
+import { CategoriaCustomizada } from '@/types';
 import { parsearInputMagico } from '@/utils/categorias';
 
 interface Props {
   usuarioNome: string;
-  cartoes: any[]; // Lista de cartões cadastrados
+  cartoes: any[];
+  categoriasCustomizadas?: CategoriaCustomizada[]; // cache em memória — vem do estado do dashboard
   onTransacaoCriada: (dados: any) => void;
 }
 
-export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }: Props) {
+export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizadas, onTransacaoCriada }: Props) {
   const [texto, setTexto] = useState('');
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState('');
@@ -21,8 +23,10 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
     setProcessando(true);
     setErro('');
 
-    const resultado = parsearInputMagico(texto, usuarioNome, cartoes);
-    
+    // Passa as categorias customizadas como 4º argumento — já estão em memória,
+    // sem nenhuma consulta extra ao Firebase
+    const resultado = parsearInputMagico(texto, usuarioNome, cartoes, categoriasCustomizadas);
+
     if (resultado) {
       onTransacaoCriada(resultado);
       setTexto('');
@@ -30,7 +34,7 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
       setErro('❌ Não consegui entender. Ex: "50 gasolina" ou "200 salário"');
       setTimeout(() => setErro(''), 3000);
     }
-    
+
     setProcessando(false);
   };
 
@@ -40,21 +44,11 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
       border: '2px solid #bae6fd',
       borderRadius: '0.75rem',
       padding: '1rem',
-      marginBottom: '1.5rem'
+      marginBottom: '1.5rem',
     }}>
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.5rem',
-        marginBottom: '0.5rem'
-      }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
         <span style={{ fontSize: '1.25rem' }}>🧠</span>
-        <h3 style={{
-          fontSize: '0.875rem',
-          fontWeight: '600',
-          color: '#0c4a6e',
-          margin: 0
-        }}>
+        <h3 style={{ fontSize: '0.875rem', fontWeight: '600', color: '#0c4a6e', margin: 0 }}>
           Adicionar Rápido
         </h3>
       </div>
@@ -63,7 +57,7 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
         <input
           type="text"
           value={texto}
-          onChange={(e) => setTexto(e.target.value)}
+          onChange={e => setTexto(e.target.value)}
           placeholder='Ex: "50 gasolina", "80 mercado credito nubank", "200 shopee receita"'
           disabled={processando}
           style={{
@@ -74,17 +68,17 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
             fontSize: '0.875rem',
             background: 'white',
             outline: 'none',
-            boxSizing: 'border-box'
+            boxSizing: 'border-box',
           }}
-          onFocus={(e) => !erro && (e.target.style.borderColor = '#0ea5e9')}
-          onBlur={(e) => !erro && (e.target.style.borderColor = '#bae6fd')}
+          onFocus={e => !erro && (e.target.style.borderColor = '#0ea5e9')}
+          onBlur={e => !erro && (e.target.style.borderColor = '#bae6fd')}
         />
         <button
           type="submit"
           disabled={!texto.trim() || processando}
           style={{
             padding: '0.75rem 1.5rem',
-            background: texto.trim() && !processando 
+            background: texto.trim() && !processando
               ? 'linear-gradient(135deg, #0ea5e9, #0284c7)'
               : '#cbd5e1',
             color: 'white',
@@ -93,7 +87,7 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
             fontSize: '0.875rem',
             fontWeight: '600',
             cursor: texto.trim() && !processando ? 'pointer' : 'not-allowed',
-            whiteSpace: 'nowrap'
+            whiteSpace: 'nowrap',
           }}
         >
           {processando ? '⏳' : '✨ Criar'}
@@ -101,21 +95,12 @@ export default function InputMagico({ usuarioNome, cartoes, onTransacaoCriada }:
       </form>
 
       {erro && (
-        <div style={{
-          marginTop: '0.5rem',
-          fontSize: '0.75rem',
-          color: '#dc2626',
-          fontWeight: '500'
-        }}>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#dc2626', fontWeight: '500' }}>
           {erro}
         </div>
       )}
 
-      <div style={{
-        fontSize: '0.75rem',
-        color: '#0369a1',
-        marginTop: '0.5rem'
-      }}>
+      <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '0.5rem' }}>
         💡 <strong>Débito:</strong> "50 gasolina" • <strong>Crédito:</strong> "80 mercado credito nubank" • <strong>Receita:</strong> "200 shopee receita"
       </div>
     </div>

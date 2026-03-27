@@ -530,7 +530,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <InputMagico usuarioNome={usuario.nome} cartoes={sistema.cartoes} onTransacaoCriada={handleInputMagico} />
+              <InputMagico usuarioNome={usuario.nome} cartoes={sistema.cartoes} categoriasCustomizadas={sistema.categoriasCustomizadas} onTransacaoCriada={handleInputMagico} />
 
               <AtalhosRapidos
                 userId={usuario.uid}

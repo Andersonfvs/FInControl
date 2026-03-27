@@ -68,21 +68,20 @@ export interface TransacaoReserva {
   id: string;
   data: string;
   descricao: string;
-  valor: number;           // valor principal (depósito) ou valor bruto retirado
+  valor: number;
   tipo: 'deposito' | 'retirada';
-  // Campos preenchidos apenas em retiradas — para rastreio de impostos
-  valorLiquido?: number;   // valor após IOF + IR
+  valorLiquido?: number;
   rendimentoBruto?: number;
   iof?: number;
   ir?: number;
-  diasCorridos?: number;   // dias corridos na data da retirada (para referência)
+  diasCorridos?: number;
 }
 
 export interface ReservaEmergencia {
   transacoes: TransacaoReserva[];
   taxaCDIAnual: number;
   meta?: number;
-  ultimoCreditoCDI?: string; // ISO date — controla quando foi o último crédito automático
+  ultimoCreditoCDI?: string;
 }
 
 export interface CategoriaCustomizada {
@@ -90,6 +89,7 @@ export interface CategoriaCustomizada {
   nome: string;
   icone: string;
   tipo: 'despesa' | 'renda';
+  palavrasChave?: string[]; // palavras que ativam esta categoria no InputMagico
 }
 
 export interface AtalhoRapido {

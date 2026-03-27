@@ -1,3 +1,5 @@
+import { CategoriaCustomizada } from '@/types';
+
 // ─────────────────────────────────────────────────────────────
 // ÍCONES DE CATEGORIAS
 // ─────────────────────────────────────────────────────────────
@@ -53,19 +55,110 @@ export interface DadosInputMagico {
   parcelas?: number;
 }
 
+// ─── Vocabulário fixo expandido ───────────────────────────────────────────────
+// Inclui variações regionais, marcas e sinônimos comuns
 const MAPA_CATEGORIAS_PALAVRAS: { palavras: string[]; categoria: string }[] = [
-  { palavras: ['lanche', 'comida', 'pizza', 'hamburguer', 'almoço', 'almoco', 'jantar', 'cafe', 'ifood', 'delivery', 'restaurante', 'mercadao', 'mc', 'mcdonalds', 'burguer'], categoria: 'Alimentação' },
-  { palavras: ['onibus', 'ônibus', 'uber', 'taxi', 'combustivel', 'gasolina', 'transporte', 'metro', 'passagem', '99'], categoria: 'Transporte' },
-  { palavras: ['mercado', 'supermercado', 'feira', 'extra', 'carrefour', 'pao de acucar'], categoria: 'Alimentação' },
-  { palavras: ['aluguel', 'condominio', 'iptu', 'moradia'], categoria: 'Moradia' },
-  { palavras: ['luz', 'agua', 'energia', 'internet', 'telefone', 'celular', 'gas', 'conta de'], categoria: 'Serviços' },
-  { palavras: ['farmacia', 'remedio', 'medico', 'hospital', 'consulta', 'saude', 'dentista', 'plano'], categoria: 'Saúde' },
-  { palavras: ['escola', 'faculdade', 'curso', 'livro', 'educacao'], categoria: 'Educação' },
-  { palavras: ['roupa', 'sapato', 'shopping', 'loja', 'vestuario'], categoria: 'Vestuário' },
-  { palavras: ['cinema', 'netflix', 'spotify', 'lazer', 'festa', 'bar', 'viagem', 'show'], categoria: 'Lazer' },
-  { palavras: ['academia', 'ginasio', 'musculacao'], categoria: 'Saúde' },
-  { palavras: ['salario', 'salário', 'freelance', 'freela'], categoria: 'Salário' },
-  { palavras: ['shopee', 'mercado livre', 'amazon'], categoria: 'Compras Online' },
+  {
+    palavras: [
+      'lanche', 'comida', 'pizza', 'hamburguer', 'almoço', 'almoco', 'jantar',
+      'cafe', 'ifood', 'delivery', 'restaurante', 'mercadao', 'mc', 'mcdonalds',
+      'burguer', 'rancho', 'hortifruti', 'padaria', 'açougue', 'acougue',
+      'churrasco', 'sushi', 'lanchonete', 'sorveteria', 'brigadeiro',
+    ],
+    categoria: 'Alimentação',
+  },
+  {
+    palavras: [
+      'onibus', 'ônibus', 'uber', 'taxi', 'combustivel', 'gasolina', 'transporte',
+      'metro', 'passagem', '99', 'etanol', 'posto', 'shell', 'ipiranga', 'br dist',
+      'estacionamento', 'pedagio', 'pedágio', 'bicicleta', 'patinete', 'moto',
+    ],
+    categoria: 'Transporte',
+  },
+  {
+    palavras: [
+      'mercado', 'supermercado', 'feira', 'extra', 'carrefour', 'pao de acucar',
+      'atacadao', 'assai', 'atakarejo', 'dia', 'sonda', 'prezunic', 'mundial',
+    ],
+    categoria: 'Alimentação',
+  },
+  {
+    palavras: ['aluguel', 'condominio', 'iptu', 'moradia', 'alugel'],
+    categoria: 'Moradia',
+  },
+  {
+    palavras: [
+      'luz', 'agua', 'energia', 'internet', 'telefone', 'celular', 'gas',
+      'conta de', 'copel', 'cemig', 'eletropaulo', 'enel', 'sabesp', 'cedae',
+      'claro', 'vivo', 'tim', 'oi', 'net', 'nextel', 'sky', 'starlink',
+    ],
+    categoria: 'Serviços',
+  },
+  {
+    palavras: [
+      'farmacia', 'remedio', 'medico', 'hospital', 'consulta', 'saude',
+      'dentista', 'plano', 'drogaria', 'ultrafarma', 'droga raia', 'pacheco',
+      'unimed', 'amil', 'bradesco saude', 'hapvida', 'clinica', 'exame',
+      'laboratorio', 'fisioterapia', 'psicologo', 'psiquiatra', 'nutricionista',
+    ],
+    categoria: 'Saúde',
+  },
+  {
+    palavras: [
+      'escola', 'faculdade', 'curso', 'livro', 'educacao', 'mensalidade',
+      'universidade', 'colegio', 'material escolar', 'apostila', 'certificado',
+    ],
+    categoria: 'Educação',
+  },
+  {
+    palavras: [
+      'roupa', 'sapato', 'shopping', 'loja', 'vestuario', 'calcado',
+      'renner', 'riachuelo', 'cea', 'hm', 'zara', 'forever', 'marisa',
+      'camiseta', 'calca', 'tenis', 'sandalia', 'bolsa', 'mala',
+    ],
+    categoria: 'Vestuário',
+  },
+  {
+    palavras: [
+      'cinema', 'netflix', 'spotify', 'lazer', 'festa', 'bar', 'viagem',
+      'show', 'disney', 'hbo', 'globoplay', 'amazon prime', 'apple tv',
+      'teatro', 'parque', 'hotel', 'pousada', 'airbnb', 'ingresso',
+      'jogo', 'game', 'playstation', 'xbox', 'steam',
+    ],
+    categoria: 'Lazer',
+  },
+  {
+    palavras: [
+      'academia', 'ginasio', 'musculacao', 'smartfit', 'bodytech',
+      'bluefit', 'crossfit', 'pilates', 'yoga', 'natacao',
+    ],
+    categoria: 'Saúde',
+  },
+  {
+    palavras: ['salario', 'salário', 'freelance', 'freela'],
+    categoria: 'Salário',
+  },
+  {
+    palavras: [
+      'shopee', 'mercado livre', 'amazon', 'aliexpress', 'americanas',
+      'submarino', 'kabum', 'magalu', 'magazine', 'casas bahia',
+    ],
+    categoria: 'Compras Online',
+  },
+  {
+    palavras: [
+      'pet', 'veterinario', 'racao', 'cobasi', 'petz', 'cachorro',
+      'gato', 'animal', 'banho tosa',
+    ],
+    categoria: 'Outras Despesas',
+  },
+  {
+    palavras: [
+      'beleza', 'cabelo', 'salao', 'manicure', 'pedicure', 'estetica',
+      'barbearia', 'depilacao', 'maquiagem', 'perfume',
+    ],
+    categoria: 'Outras Despesas',
+  },
 ];
 
 const CARTOES_CONHECIDOS: { [key: string]: string } = {
@@ -99,7 +192,20 @@ function buscarCartaoPorNome(resto: string, cartoesDisponiveis: any[]): { cartao
   return null;
 }
 
-export function parsearInputMagico(input: string, usuarioNome: string, cartoesDisponiveis?: any[]): DadosInputMagico | null {
+// ─────────────────────────────────────────────────────────────
+// FUNÇÃO PRINCIPAL DO PARSER
+// Parâmetros:
+//   input               — texto digitado pelo usuário
+//   usuarioNome         — nome do usuário logado
+//   cartoesDisponiveis  — cartões cadastrados no Firebase (para match de cartão)
+//   categoriasCustomizadas — categorias do usuário com palavrasChave (cache em memória)
+// ─────────────────────────────────────────────────────────────
+export function parsearInputMagico(
+  input: string,
+  usuarioNome: string,
+  cartoesDisponiveis?: any[],
+  categoriasCustomizadas?: CategoriaCustomizada[],
+): DadosInputMagico | null {
   const texto = input.trim();
   if (!texto) return null;
 
@@ -233,16 +339,49 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
   const tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
 
   // ── 8. Detectar categoria ─────────────────────────────────
+  // PRIORIDADE 1: palavras-chave das categorias customizadas do usuário (cache em memória)
+  // PRIORIDADE 2: mapa fixo expandido
+  // PRIORIDADE 3: fallback padrão
   let categoria = tipo === 'renda' ? 'Outras Receitas' : 'Outras Despesas';
 
   if (tipo === 'renda') {
-    if (resto.includes('salario') || resto.includes('salário')) categoria = 'Salário';
-    else if (resto.includes('vale')) categoria = 'Vale Alimentação';
-    else if (resto.includes('shopee')) categoria = 'Venda Shopee';
-    else if (resto.includes('freelance') || resto.includes('freela')) categoria = 'Freelance';
+    // Para receitas, verifica customizadas primeiro
+    if (categoriasCustomizadas && categoriasCustomizadas.length > 0) {
+      for (const cat of categoriasCustomizadas) {
+        if (cat.tipo !== 'renda') continue;
+        if (!cat.palavrasChave || cat.palavrasChave.length === 0) continue;
+        const achou = cat.palavrasChave.some(p => p.trim() && resto.includes(p.toLowerCase().trim()));
+        if (achou) { categoria = cat.nome; break; }
+      }
+    }
+    // Fallback fixo para receitas
+    if (categoria === 'Outras Receitas') {
+      if (resto.includes('salario') || resto.includes('salário')) categoria = 'Salário';
+      else if (resto.includes('vale')) categoria = 'Vale Alimentação';
+      else if (resto.includes('shopee')) categoria = 'Venda Shopee';
+      else if (resto.includes('freelance') || resto.includes('freela')) categoria = 'Freelance';
+    }
   } else {
-    for (const { palavras, categoria: cat } of MAPA_CATEGORIAS_PALAVRAS) {
-      if (palavras.some(p => resto.includes(p))) { categoria = cat; break; }
+    // PRIORIDADE 1: palavras-chave do usuário (mais específicas)
+    let achouCustom = false;
+    if (categoriasCustomizadas && categoriasCustomizadas.length > 0) {
+      for (const cat of categoriasCustomizadas) {
+        if (cat.tipo !== 'despesa') continue;
+        if (!cat.palavrasChave || cat.palavrasChave.length === 0) continue;
+        const achou = cat.palavrasChave.some(p => p.trim() && resto.includes(p.toLowerCase().trim()));
+        if (achou) {
+          categoria = cat.nome;
+          achouCustom = true;
+          break;
+        }
+      }
+    }
+
+    // PRIORIDADE 2: mapa fixo expandido (fallback)
+    if (!achouCustom) {
+      for (const { palavras, categoria: cat } of MAPA_CATEGORIAS_PALAVRAS) {
+        if (palavras.some(p => resto.includes(p))) { categoria = cat; break; }
+      }
     }
   }
 
