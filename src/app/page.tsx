@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 export default function LoginPage() {
@@ -14,16 +14,15 @@ export default function LoginPage() {
   const [verificandoSessao, setVerificandoSessao] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        console.log('✅ Já estava logado! Redirecionando...');
+    // authStateReady() espera o Firebase restaurar a sessão do localStorage
+    // antes de qualquer decisão — sem loops, sem race conditions
+    auth.authStateReady().then(() => {
+      if (auth.currentUser) {
         router.push('/dashboard');
       } else {
-        console.log('❌ Não está logado, mostrando tela de login');
         setVerificandoSessao(false);
       }
     });
-    return () => unsubscribe();
   }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -36,7 +35,6 @@ export default function LoginPage() {
       router.push('/dashboard');
     } catch (error: any) {
       console.error('Erro no login:', error);
-      
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
         setErro('Email ou senha incorretos');
       } else if (error.code === 'auth/user-not-found') {
@@ -73,6 +71,7 @@ export default function LoginPage() {
             Verificando sessão...
           </span>
         </div>
+        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
       </div>
     );
   }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
 import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada } from '@/types';
@@ -32,9 +32,6 @@ export default function DashboardPage() {
 
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [carregando, setCarregando] = useState(true);
-  // authChecked = Firebase já disparou o primeiro onAuthStateChanged
-  // Só redirecionamos para login DEPOIS que authChecked for true e user for null
-  const [authChecked, setAuthChecked] = useState(false);
   const [sistema, setSistema] = useState<SistemaFinanceiro>({
     dadosPorMes: {}, pessoasCadastradas: [], metas: [],
     reservaEmergencia: { transacoes: [], taxaCDIAnual: 14.9 },
@@ -63,14 +60,13 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // ─── AUTH ────────────────────────────────────────────────────────────────
-  // onAuthStateChanged dispara 1x ao inicializar:
-  //   - user presente → seta usuário, para o spinner
-  //   - user null → Firebase confirmou que NÃO há sessão → redireciona
-  // authChecked garante que nunca redirecionamos antes do Firebase responder.
+  // ─── AUTH com authStateReady ──────────────────────────────────────────────
+  // authStateReady() é uma Promise que resolve SOMENTE após o Firebase
+  // ter restaurado (ou confirmado ausência de) sessão do localStorage.
+  // Isso elimina o flash de null que causava o loop de redirect.
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      setAuthChecked(true); // Firebase respondeu
+    auth.authStateReady().then(() => {
+      const user = auth.currentUser;
       if (user) {
         const email = user.email?.toLowerCase().trim() || '';
         let nome = 'Usuário';
@@ -79,11 +75,9 @@ export default function DashboardPage() {
         setUsuario({ uid: user.uid, nome, email: user.email || '' });
         setCarregando(false);
       } else {
-        // Firebase confirmou: não há sessão ativa → vai para login
         router.push('/');
       }
     });
-    return () => unsubscribe();
   }, [router]);
 
   // Firebase Realtime Database
@@ -205,6 +199,8 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao atualizar transação', 'erro'); }
   };
 
+  // CORREÇÃO: dataPagamento: undefined causa erro no Firebase.
+  // Usamos destructuring para remover o campo em vez de setar undefined.
   const handleExcluir = async (id: string) => {
     if (!usuario) return;
     try {
@@ -214,9 +210,11 @@ export default function DashboardPage() {
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
         const novasFaturas = { ...sistema.faturas };
         if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = novasFaturas[mesKey].map(f =>
-            f.cartaoId === transacao.cartaoId ? { ...f, paga: false, dataPagamento: undefined } : f
-          );
+          novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
+            if (f.cartaoId !== transacao.cartaoId) return f;
+            const { dataPagamento, ...resto } = f as any;
+            return { ...resto, paga: false };
+          });
           await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
         }
         showToast('Pagamento removido — fatura voltou para pendente!', 'aviso');
@@ -296,10 +294,12 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao editar item', 'erro'); }
   };
 
+  // CORREÇÃO: deep copy via JSON para evitar mutation e valores undefined
+  // que o Firebase rejeita silenciosamente.
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
-      const novasFaturas = { ...sistema.faturas };
+      const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
       const porMes: { [k: string]: ItemFatura[] } = {};
       itens.forEach(item => {
         const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
@@ -310,10 +310,10 @@ export default function DashboardPage() {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find(f => f.cartaoId === cartaoId);
+        const existente = novasFaturas[mesKey].find((f: any) => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens.push(...itensDoMes);
-          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
+          existente.totalFatura = existente.itens.reduce((s: number, i: any) => s + i.valor, 0);
         } else {
           novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
         }
@@ -360,8 +360,7 @@ export default function DashboardPage() {
     return receitasVale - despesasVale;
   };
 
-  // Spinner enquanto Firebase não respondeu ou enquanto carrega dados do usuário
-  if (carregando || !authChecked) return (
+  if (carregando) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#fafafa' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTop: '3px solid #06b6d4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 1rem' }} />
