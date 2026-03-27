@@ -50,7 +50,6 @@ export interface DadosInputMagico {
   cartaoId?: string;
   cartaoNome?: string;
   pago: boolean;
-  // Número de parcelas — ex: "3x" → parcelas: 3
   parcelas?: number;
 }
 
@@ -83,6 +82,22 @@ const CARTOES_CONHECIDOS: { [key: string]: string } = {
   'sicoob': 'Sicoob',
   'sicredi': 'Sicredi',
 };
+
+function buscarCartaoPorNome(resto: string, cartoesDisponiveis: any[]): { cartaoId: string; cartaoNome: string; restoAtualizado: string } | null {
+  for (const cartao of cartoesDisponiveis) {
+    const nomeCartaoLower = cartao.nome.toLowerCase();
+    const palavrasCartao = nomeCartaoLower.split(/\s+/);
+    const achou = palavrasCartao.some((p: string) => p.length > 2 && resto.includes(p));
+    if (achou) {
+      let restoAtualizado = resto;
+      palavrasCartao.forEach((p: string) => {
+        if (p.length > 2) restoAtualizado = restoAtualizado.replace(p, '').trim();
+      });
+      return { cartaoId: cartao.id, cartaoNome: cartao.nome, restoAtualizado };
+    }
+  }
+  return null;
+}
 
 export function parsearInputMagico(input: string, usuarioNome: string, cartoesDisponiveis?: any[]): DadosInputMagico | null {
   const texto = input.trim();
@@ -147,9 +162,7 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
   const matchParcelas = resto.match(regexParcelas);
   if (matchParcelas) {
     const n = parseInt(matchParcelas[1]);
-    if (n > 1 && n <= 72) {
-      parcelas = n;
-    }
+    if (n > 1 && n <= 72) parcelas = n;
     resto = resto.replace(matchParcelas[0], '').trim();
   }
 
@@ -157,34 +170,45 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
   let metodoPagamento: 'dinheiro' | 'cartao' = 'dinheiro';
   let cartaoId: string | undefined;
   let cartaoNome: string | undefined;
-  let pago = true; // Padrão: débito é pago na hora
+  let pago = true;
 
   const temCredito = resto.includes('credito') || resto.includes('crédito') || resto.includes('cartao') || resto.includes('cartão');
 
   if (temCredito) {
     metodoPagamento = 'cartao';
-    pago = false; // Crédito não é pago ainda (vai pra fatura)
+    pago = false;
     resto = resto.replace(/credito|crédito|cartao|cartão/g, '').trim();
 
-    // Tentar identificar o cartão
+    // PASSO 1: mapa fixo de cartões conhecidos (nubank, inter, etc.)
     for (const [palavra, nomeCartao] of Object.entries(CARTOES_CONHECIDOS)) {
       if (resto.includes(palavra)) {
         cartaoNome = nomeCartao;
         resto = resto.replace(palavra, '').trim();
-
-        // Buscar ID do cartão se disponível
         if (cartoesDisponiveis) {
-          const cartaoEncontrado = cartoesDisponiveis.find(c =>
+          const encontrado = cartoesDisponiveis.find((c: any) =>
             c.nome.toLowerCase().includes(palavra) ||
             nomeCartao.toLowerCase().includes(c.nome.toLowerCase())
           );
-          if (cartaoEncontrado) {
-            cartaoId = cartaoEncontrado.id;
-            cartaoNome = cartaoEncontrado.nome;
-          }
+          if (encontrado) { cartaoId = encontrado.id; cartaoNome = encontrado.nome; }
         }
         break;
       }
+    }
+
+    // PASSO 2: busca pelo nome exato do cartão cadastrado (ex: "Riachuelo", "XP", etc.)
+    if (!cartaoId && cartoesDisponiveis) {
+      const resultado = buscarCartaoPorNome(resto, cartoesDisponiveis);
+      if (resultado) {
+        cartaoId = resultado.cartaoId;
+        cartaoNome = resultado.cartaoNome;
+        resto = resultado.restoAtualizado;
+      }
+    }
+
+    // PASSO 3: se só tem 1 cartão cadastrado, usa ele automaticamente
+    if (!cartaoId && cartoesDisponiveis && cartoesDisponiveis.length === 1) {
+      cartaoId = cartoesDisponiveis[0].id;
+      cartaoNome = cartoesDisponiveis[0].nome;
     }
   }
 
@@ -192,6 +216,11 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
   if (parcelas && parcelas > 1 && metodoPagamento === 'dinheiro') {
     metodoPagamento = 'cartao';
     pago = false;
+    if (!cartaoId && cartoesDisponiveis) {
+      const resultado = buscarCartaoPorNome(resto, cartoesDisponiveis);
+      if (resultado) { cartaoId = resultado.cartaoId; cartaoNome = resultado.cartaoNome; resto = resultado.restoAtualizado; }
+      else if (cartoesDisponiveis.length === 1) { cartaoId = cartoesDisponiveis[0].id; cartaoNome = cartoesDisponiveis[0].nome; }
+    }
   }
 
   const temDebito = resto.includes('debito') || resto.includes('débito');
@@ -201,11 +230,7 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
   }
 
   // ── 7. Detectar tipo (renda ou despesa) ───────────────────
-  let tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
-
-  if (resto.includes('shopee') && forcaReceita) {
-    tipo = 'renda';
-  }
+  const tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
 
   // ── 8. Detectar categoria ─────────────────────────────────
   let categoria = tipo === 'renda' ? 'Outras Receitas' : 'Outras Despesas';
@@ -217,10 +242,7 @@ export function parsearInputMagico(input: string, usuarioNome: string, cartoesDi
     else if (resto.includes('freelance') || resto.includes('freela')) categoria = 'Freelance';
   } else {
     for (const { palavras, categoria: cat } of MAPA_CATEGORIAS_PALAVRAS) {
-      if (palavras.some(p => resto.includes(p))) {
-        categoria = cat;
-        break;
-      }
+      if (palavras.some(p => resto.includes(p))) { categoria = cat; break; }
     }
   }
 
