@@ -67,6 +67,7 @@ export default function ModalCompraCartao({
           dataBase.setMonth(dataBase.getMonth() + i);
           const dataFormatada = dataBase.toISOString().split('T')[0];
 
+          // CORREÇÃO: parcelas e parcelaAtual são campos obrigatórios do tipo ItemFatura
           const itemBase: ItemFatura = {
             id: gerarId(),
             cartaoId,
@@ -75,14 +76,15 @@ export default function ModalCompraCartao({
             categoria,
             valor: valorPorPessoa,
             pessoa: 'Anderson Ferreira',
-            dividido: true
+            parcelas: numParcelas,
+            parcelaAtual: i + 1,
+            dividido: true,
           };
 
-          // Só adiciona parcelamento se tiver mais de 1 parcela
           if (numParcelas > 1) {
             itemBase.parcelamento = {
               parcelaAtual: i + 1,
-              totalParcelas: numParcelas
+              totalParcelas: numParcelas,
             };
           }
 
@@ -96,13 +98,15 @@ export default function ModalCompraCartao({
             categoria,
             valor: valorPorPessoa,
             pessoa: 'Evelin Mulbaier',
-            dividido: true
+            parcelas: numParcelas,
+            parcelaAtual: i + 1,
+            dividido: true,
           };
 
           if (numParcelas > 1) {
             itemBase2.parcelamento = {
               parcelaAtual: i + 1,
-              totalParcelas: numParcelas
+              totalParcelas: numParcelas,
             };
           }
 
@@ -122,13 +126,15 @@ export default function ModalCompraCartao({
             categoria,
             valor: valorPorParcela,
             pessoa,
-            dividido: false
+            parcelas: numParcelas,
+            parcelaAtual: i + 1,
+            dividido: false,
           };
 
           if (numParcelas > 1) {
             itemBase.parcelamento = {
               parcelaAtual: i + 1,
-              totalParcelas: numParcelas
+              totalParcelas: numParcelas,
             };
           }
 

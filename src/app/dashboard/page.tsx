@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
-import { auth, database, persistenciaConfigurada } from '@/lib/firebase';
+import { auth, database } from '@/lib/firebase';
 import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada } from '@/types';
 import { gerarMesKey, calcularResumo, formatarMoeda, obterNomeMes, gerarId } from '@/utils/financeiro';
 import { DadosInputMagico } from '@/utils/categorias';
@@ -48,8 +48,6 @@ export default function DashboardPage() {
   const [modalCompraAberto, setModalCompraAberto] = useState(false);
   const [cartaoSelecionadoId, setCartaoSelecionadoId] = useState('');
   const [transacaoEditando, setTransacaoEditando] = useState<Transacao | null>(null);
-
-  // Edição de cartão
   const [cartaoEditando, setCartaoEditando] = useState<CartaoCredito | null>(null);
 
   // Atalhos Rápidos
@@ -62,31 +60,24 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // ─── AUTH — A CORREÇÃO PRINCIPAL ─────────────────────────────────────────
-  // Aguarda a persistência ser configurada ANTES de ouvir o estado de auth.
-  // Só redireciona para login quando o Firebase CONFIRMAR que não há sessão
-  // (authChecked = true && user = null). Nunca usa timeout.
+  // ─── AUTH ────────────────────────────────────────────────────────────────
+  // Firebase usa browserLocalPersistence por padrão — não precisa configurar.
+  // onAuthStateChanged dispara 1x ao inicializar e restaura a sessão do localStorage.
+  // Ficamos em "carregando" até esse primeiro disparo. NUNCA usamos timeout.
   useEffect(() => {
-    let unsubscribe: (() => void) | null = null;
-
-    persistenciaConfigurada.then(() => {
-      // Após garantir persistência, ouve o estado de auth
-      unsubscribe = onAuthStateChanged(auth, (user) => {
-        if (user) {
-          const email = user.email?.toLowerCase().trim() || '';
-          let nome = 'Usuário';
-          if (email === 'andersonfvsti@gmail.com') nome = 'Anderson Ferreira';
-          else if (email === 'evelinmulbaier@gmail.com') nome = 'Evelin Mulbaier';
-          setUsuario({ uid: user.uid, nome, email: user.email || '' });
-          setCarregando(false);
-        } else {
-          // Firebase confirmou: não há sessão — redireciona
-          router.push('/');
-        }
-      });
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const email = user.email?.toLowerCase().trim() || '';
+        let nome = 'Usuário';
+        if (email === 'andersonfvsti@gmail.com') nome = 'Anderson Ferreira';
+        else if (email === 'evelinmulbaier@gmail.com') nome = 'Evelin Mulbaier';
+        setUsuario({ uid: user.uid, nome, email: user.email || '' });
+        setCarregando(false);
+      } else {
+        router.push('/');
+      }
     });
-
-    return () => { if (unsubscribe) unsubscribe(); };
+    return () => unsubscribe();
   }, [router]);
 
   // Firebase Realtime Database
@@ -152,7 +143,6 @@ export default function DashboardPage() {
         const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
         const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
         const novasFaturas = { ...sistema.faturas };
-
         for (let i = 0; i < totalParcelas; i++) {
           const dataBase = new Date(dados.data + 'T00:00:00');
           dataBase.setMonth(dataBase.getMonth() + i);
@@ -177,10 +167,8 @@ export default function DashboardPage() {
         await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
         const textoParcelamento = totalParcelas > 1 ? ` em ${totalParcelas}x de ${formatarMoeda(valorParcela)}` : '';
         showToast(`💳 ${dados.descricao}${textoParcelamento} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
-
       } else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
         showToast('❌ Cartão não encontrado. Cadastre o cartão primeiro!', 'erro');
-        return;
       } else {
         const novaTransacao: Transacao = {
           id: gerarId(), data: dados.data, categoria: dados.categoria,
@@ -196,10 +184,7 @@ export default function DashboardPage() {
         await set(dbRef, [...existentes, novaTransacao]);
         showToast(`${dados.tipo === 'despesa' ? '💸' : '💰'} ${dados.descricao} adicionada!`, 'sucesso');
       }
-    } catch (error) {
-      console.error('Erro ao adicionar:', error);
-      showToast('Erro ao adicionar transação', 'erro');
-    }
+    } catch { showToast('Erro ao adicionar transação', 'erro'); }
   }, [usuario, sistema.faturas, showToast]);
 
   const handleMarcarPago = async (id: string) => {
@@ -220,7 +205,6 @@ export default function DashboardPage() {
       const mesKey = gerarMesKey(dataReferencia);
       const transacoes = sistema.dadosPorMes[mesKey] || [];
       const transacao = transacoes.find(t => t.id === id);
-
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
         const novasFaturas = { ...sistema.faturas };
         if (novasFaturas[mesKey]) {
@@ -266,10 +250,7 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar cartão', 'erro'); }
   };
 
-  const handleEditarCartao = (cartao: CartaoCredito) => {
-    setCartaoEditando(cartao);
-    setModalCartaoAberto(true);
-  };
+  const handleEditarCartao = (cartao: CartaoCredito) => { setCartaoEditando(cartao); setModalCartaoAberto(true); };
 
   const handleExcluirCartao = async (cartaoId: string) => {
     if (!usuario) return;

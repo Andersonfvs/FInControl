@@ -37,7 +37,9 @@ export interface ItemFatura {
   pessoa: string;
   parcelas: number;
   parcelaAtual: number;
-  // Campo para exibir parcelamento (ex: 1/3, 2/3...)
+  // Divide 50/50 entre Anderson e Evelin
+  dividido?: boolean;
+  // Exibe "2/3", "1/12" etc na fatura
   parcelamento?: {
     parcelaAtual: number;
     totalParcelas: number;

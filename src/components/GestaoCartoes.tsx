@@ -253,12 +253,12 @@ export default function GestaoCartoes({
                     <div style={{
                       fontSize: isMobile ? '1.375rem' : '1.5rem',
                       fontWeight: '700',
-                      color: estaPaga ? '#10b981' : totalFatura > 0 ? '#ef4444' : '#374151',
+                      color: estaPaga && totalFatura > 0 ? '#10b981' : totalFatura > 0 ? '#ef4444' : '#374151',
                     }}>
                       {formatarMoeda(totalFatura)}
                     </div>
                   </div>
-                  {estaPaga ? (
+                  {estaPaga && totalFatura > 0 ? (
                     <div style={{
                       background: '#d1fae5', color: '#065f46',
                       padding: '0.375rem 0.75rem', borderRadius: '0.375rem',

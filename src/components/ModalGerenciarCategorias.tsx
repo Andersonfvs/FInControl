@@ -1,21 +1,18 @@
 'use client';
 
 import { useState } from 'react';
-
-interface Categoria {
-  nome: string;
-  tipo: 'despesa' | 'renda';
-}
+import { CategoriaCustomizada } from '@/types';
+import { gerarId } from '@/utils/financeiro';
 
 interface Props {
   aberto: boolean;
-  categorias: Categoria[];
+  categorias: CategoriaCustomizada[];
   onFechar: () => void;
-  onSalvar: (categorias: Categoria[]) => void;
+  onSalvar: (categorias: CategoriaCustomizada[]) => void;
 }
 
 export default function ModalGerenciarCategorias({ aberto, categorias, onFechar, onSalvar }: Props) {
-  const [listaLocal, setListaLocal] = useState<Categoria[]>(categorias);
+  const [listaLocal, setListaLocal] = useState<CategoriaCustomizada[]>(categorias);
   const [novaCategoria, setNovaCategoria] = useState('');
   const [tipoNova, setTipoNova] = useState<'despesa' | 'renda'>('despesa');
 
@@ -33,7 +30,7 @@ export default function ModalGerenciarCategorias({ aberto, categorias, onFechar,
       return;
     }
 
-    setListaLocal([...listaLocal, { nome: novaCategoria.trim(), tipo: tipoNova }]);
+    setListaLocal([...listaLocal, { id: gerarId(), nome: novaCategoria.trim(), tipo: tipoNova, icone: '🏷️' }]);
     setNovaCategoria('');
   };
 

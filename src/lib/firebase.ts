@@ -1,5 +1,5 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, browserLocalPersistence, setPersistence } from 'firebase/auth';
+import { getAuth } from 'firebase/auth';
 import { getDatabase } from 'firebase/database';
 
 const firebaseConfig = {
@@ -13,12 +13,8 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
+
+// getAuth já usa browserLocalPersistence por padrão no browser.
+// NÃO chamar setPersistence — causa flash de logout no F5.
 export const auth = getAuth(app);
 export const database = getDatabase(app);
-
-// Garante persistência LOCAL (mantém login após F5)
-// Exportamos a promise para o dashboard poder aguardar
-export const persistenciaConfigurada = setPersistence(auth, browserLocalPersistence)
-  .catch((error) => {
-    console.error('Erro ao configurar persistência:', error);
-  });
