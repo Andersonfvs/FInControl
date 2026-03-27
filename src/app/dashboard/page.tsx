@@ -32,6 +32,9 @@ export default function DashboardPage() {
 
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [carregando, setCarregando] = useState(true);
+  // authChecked = Firebase já disparou o primeiro onAuthStateChanged
+  // Só redirecionamos para login DEPOIS que authChecked for true e user for null
+  const [authChecked, setAuthChecked] = useState(false);
   const [sistema, setSistema] = useState<SistemaFinanceiro>({
     dadosPorMes: {}, pessoasCadastradas: [], metas: [],
     reservaEmergencia: { transacoes: [], taxaCDIAnual: 14.9 },
@@ -61,11 +64,13 @@ export default function DashboardPage() {
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
   // ─── AUTH ────────────────────────────────────────────────────────────────
-  // Firebase usa browserLocalPersistence por padrão — não precisa configurar.
-  // onAuthStateChanged dispara 1x ao inicializar e restaura a sessão do localStorage.
-  // Ficamos em "carregando" até esse primeiro disparo. NUNCA usamos timeout.
+  // onAuthStateChanged dispara 1x ao inicializar:
+  //   - user presente → seta usuário, para o spinner
+  //   - user null → Firebase confirmou que NÃO há sessão → redireciona
+  // authChecked garante que nunca redirecionamos antes do Firebase responder.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setAuthChecked(true); // Firebase respondeu
       if (user) {
         const email = user.email?.toLowerCase().trim() || '';
         let nome = 'Usuário';
@@ -74,6 +79,7 @@ export default function DashboardPage() {
         setUsuario({ uid: user.uid, nome, email: user.email || '' });
         setCarregando(false);
       } else {
+        // Firebase confirmou: não há sessão ativa → vai para login
         router.push('/');
       }
     });
@@ -354,7 +360,8 @@ export default function DashboardPage() {
     return receitasVale - despesasVale;
   };
 
-  if (carregando) return (
+  // Spinner enquanto Firebase não respondeu ou enquanto carrega dados do usuário
+  if (carregando || !authChecked) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#fafafa' }}>
       <div style={{ textAlign: 'center' }}>
         <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTop: '3px solid #06b6d4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 1rem' }} />
