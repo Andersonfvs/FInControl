@@ -63,7 +63,7 @@ export default function DashboardPage() {
   // ─── AUTH com authStateReady ──────────────────────────────────────────────
   // authStateReady() é uma Promise que resolve SOMENTE após o Firebase
   // ter restaurado (ou confirmado ausência de) sessão do localStorage.
-  // Isso elimina o flash de null que causava o loop de redirect.
+  // router.replace em vez de router.push evita empilhar histórico e causar loop.
   useEffect(() => {
     auth.authStateReady().then(() => {
       const user = auth.currentUser;
@@ -75,7 +75,7 @@ export default function DashboardPage() {
         setUsuario({ uid: user.uid, nome, email: user.email || '' });
         setCarregando(false);
       } else {
-        router.push('/');
+        router.replace('/');
       }
     });
   }, [router]);
@@ -199,8 +199,6 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao atualizar transação', 'erro'); }
   };
 
-  // CORREÇÃO: dataPagamento: undefined causa erro no Firebase.
-  // Usamos destructuring para remover o campo em vez de setar undefined.
   const handleExcluir = async (id: string) => {
     if (!usuario) return;
     try {
@@ -210,11 +208,9 @@ export default function DashboardPage() {
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
         const novasFaturas = { ...sistema.faturas };
         if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
-            if (f.cartaoId !== transacao.cartaoId) return f;
-            const { dataPagamento, ...resto } = f as any;
-            return { ...resto, paga: false };
-          });
+          novasFaturas[mesKey] = novasFaturas[mesKey].map(f =>
+            f.cartaoId === transacao.cartaoId ? { ...f, paga: false, dataPagamento: undefined } : f
+          );
           await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
         }
         showToast('Pagamento removido — fatura voltou para pendente!', 'aviso');
@@ -294,12 +290,10 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao editar item', 'erro'); }
   };
 
-  // CORREÇÃO: deep copy via JSON para evitar mutation e valores undefined
-  // que o Firebase rejeita silenciosamente.
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
-      const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
+      const novasFaturas = { ...sistema.faturas };
       const porMes: { [k: string]: ItemFatura[] } = {};
       itens.forEach(item => {
         const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
@@ -310,10 +304,10 @@ export default function DashboardPage() {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find((f: any) => f.cartaoId === cartaoId);
+        const existente = novasFaturas[mesKey].find(f => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens.push(...itensDoMes);
-          existente.totalFatura = existente.itens.reduce((s: number, i: any) => s + i.valor, 0);
+          existente.totalFatura = existente.itens.reduce((s, i) => s + i.valor, 0);
         } else {
           novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
         }
@@ -430,7 +424,7 @@ export default function DashboardPage() {
                 style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
                 {isMobile ? '+ 💸' : '+ Despesa'}
               </button>
-              <button onClick={async () => { await signOut(auth); router.push('/'); }}
+              <button onClick={async () => { await signOut(auth); router.replace('/'); }}
                 style={{ padding: isMobile ? '0.5rem 0.625rem' : '0.5rem 1rem', background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>
                 {isMobile ? '↩' : 'Sair'}
               </button>

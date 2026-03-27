@@ -18,7 +18,7 @@ export default function LoginPage() {
     // antes de qualquer decisão — sem loops, sem race conditions
     auth.authStateReady().then(() => {
       if (auth.currentUser) {
-        router.push('/dashboard');
+        router.replace('/dashboard');
       } else {
         setVerificandoSessao(false);
       }
@@ -32,7 +32,7 @@ export default function LoginPage() {
 
     try {
       await signInWithEmailAndPassword(auth, email, senha);
-      router.push('/dashboard');
+      router.replace('/dashboard');
     } catch (error: any) {
       console.error('Erro no login:', error);
       if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
