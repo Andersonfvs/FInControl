@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { signInWithEmailAndPassword, onAuthStateChanged } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
 export default function LoginPage() {
@@ -14,22 +14,22 @@ export default function LoginPage() {
   const [verificandoSessao, setVerificandoSessao] = useState(true);
 
   useEffect(() => {
-    // authStateReady() espera o Firebase restaurar a sessão do localStorage
-    // antes de qualquer decisão — sem loops, sem race conditions
-    auth.authStateReady().then(() => {
-      if (auth.currentUser) {
+    // client-side navigation (router.replace) preserva o estado do Firebase em memória
+    // onAuthStateChanged dispara UMA vez com o estado real — sem loop possível
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
         router.replace('/dashboard');
       } else {
         setVerificandoSessao(false);
       }
     });
+    return () => unsubscribe();
   }, [router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErro('');
     setCarregando(true);
-
     try {
       await signInWithEmailAndPassword(auth, email, senha);
       router.replace('/dashboard');

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { signOut } from 'firebase/auth';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
 import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada } from '@/types';
@@ -60,13 +60,13 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // ─── AUTH com authStateReady ──────────────────────────────────────────────
-  // authStateReady() é uma Promise que resolve SOMENTE após o Firebase
-  // ter restaurado (ou confirmado ausência de) sessão do localStorage.
-  // router.replace em vez de router.push evita empilhar histórico e causar loop.
+  // ─── AUTH ────────────────────────────────────────────────────────────────
+  // router.replace faz navegação CLIENT-SIDE — Firebase NÃO reinicializa,
+  // mantém o estado em memória. onAuthStateChanged dispara com o estado real.
+  // Cleanup correto via return garante que o listener para quando o componente
+  // desmonta, prevenindo qualquer possibilidade de loop.
   useEffect(() => {
-    auth.authStateReady().then(() => {
-      const user = auth.currentUser;
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         const email = user.email?.toLowerCase().trim() || '';
         let nome = 'Usuário';
@@ -78,6 +78,7 @@ export default function DashboardPage() {
         router.replace('/');
       }
     });
+    return () => unsubscribe();
   }, [router]);
 
   // Firebase Realtime Database
@@ -199,8 +200,6 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao atualizar transação', 'erro'); }
   };
 
-  // CORREÇÃO: dataPagamento: undefined faz Firebase rejeitar o write inteiro.
-  // Usamos destructuring para remover o campo ao invés de setar undefined.
   const handleExcluir = async (id: string) => {
     if (!usuario) return;
     try {
@@ -294,8 +293,6 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao editar item', 'erro'); }
   };
 
-  // CORREÇÃO: deep copy via JSON.parse/stringify remove undefined e evita
-  // mutation do state, que causava o Firebase rejeitar o write silenciosamente.
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
