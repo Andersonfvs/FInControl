@@ -37,9 +37,7 @@ export interface ItemFatura {
   pessoa: string;
   parcelas: number;
   parcelaAtual: number;
-  // Divide 50/50 entre Anderson e Evelin
   dividido?: boolean;
-  // Exibe "2/3", "1/12" etc na fatura
   parcelamento?: {
     parcelaAtual: number;
     totalParcelas: number;
@@ -55,7 +53,6 @@ export interface Fatura {
   dataPagamento?: string;
 }
 
-// Alias para compatibilidade com componentes que usam FaturaMensal
 export type FaturaMensal = Fatura;
 
 export interface Meta {
@@ -71,13 +68,20 @@ export interface TransacaoReserva {
   id: string;
   data: string;
   descricao: string;
-  valor: number;
-  tipo: 'entrada' | 'saida';
+  valor: number;           // valor principal (depósito) ou valor bruto retirado
+  tipo: 'deposito' | 'retirada';
+  // Campos preenchidos apenas em retiradas — para rastreio de impostos
+  valorLiquido?: number;   // valor após IOF + IR
+  rendimentoBruto?: number;
+  iof?: number;
+  ir?: number;
+  diasCorridos?: number;   // dias corridos na data da retirada (para referência)
 }
 
 export interface ReservaEmergencia {
   transacoes: TransacaoReserva[];
   taxaCDIAnual: number;
+  meta?: number;
 }
 
 export interface CategoriaCustomizada {
@@ -122,7 +126,6 @@ export interface CategoriaTotal {
   cor: string;
 }
 
-// COMPATIBILIDADE
 export interface Resumo {
   totalReceitas: number;
   totalDespesas: number;

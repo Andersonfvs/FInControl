@@ -23,6 +23,7 @@ import GestaoCategorias from '@/components/GestaoCategorias';
 import InsightsInteligentes from '@/components/InsightsInteligentes';
 import AlertaFaturas from '@/components/AlertaFaturas';
 import AtalhosRapidos from '@/components/AtalhosRapidos';
+import ReservaEmergencia from '@/components/ReservaEmergencia';
 
 type ToastTipo = 'sucesso' | 'erro' | 'aviso' | 'info';
 
@@ -61,10 +62,6 @@ export default function DashboardPage() {
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
   // ─── AUTH ────────────────────────────────────────────────────────────────
-  // router.replace faz navegação CLIENT-SIDE — Firebase NÃO reinicializa,
-  // mantém o estado em memória. onAuthStateChanged dispara com o estado real.
-  // Cleanup correto via return garante que o listener para quando o componente
-  // desmonta, prevenindo qualquer possibilidade de loop.
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
@@ -81,13 +78,15 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // Firebase Realtime Database
+  // ─── Firebase Realtime Database ───────────────────────────────────────────
   useEffect(() => {
     if (!usuario) return;
     const dbRef = ref(database, `usuarios/${usuario.uid}`);
     const unsubscribe = onValue(dbRef, (snapshot) => {
       if (!snapshot.exists()) return;
       const dados = snapshot.val();
+
+      // ── Migração: dadosPorMes sem id ──────────────────────────────────────
       const dadosPorMesOriginal = dados.dadosPorMes || {};
       let precisaMigrar = false;
       const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
@@ -101,13 +100,47 @@ export default function DashboardPage() {
         });
       }
       if (precisaMigrar) set(ref(database, `usuarios/${usuario.uid}/dadosPorMes`), dadosPorMesMigrado).catch(console.error);
+
+      // ── Migração: faturas sem campo itens ─────────────────────────────────
+      const faturasOriginal = dados.faturas || {};
+      let precisaMigrarFaturas = false;
+      const faturasMigradas: { [mesKey: string]: any[] } = {};
+      for (const mesKey in faturasOriginal) {
+        const lista: any[] = Array.isArray(faturasOriginal[mesKey])
+          ? faturasOriginal[mesKey]
+          : Object.values(faturasOriginal[mesKey] || {});
+        faturasMigradas[mesKey] = lista.map((f: any) => {
+          if (!f) return f;
+          if (!f.itens) {
+            precisaMigrarFaturas = true;
+            return { ...f, itens: [], totalFatura: f.totalFatura || 0 };
+          }
+          if (!Array.isArray(f.itens)) {
+            precisaMigrarFaturas = true;
+            return { ...f, itens: Object.values(f.itens || {}) };
+          }
+          return f;
+        });
+      }
+      if (precisaMigrarFaturas) set(ref(database, `usuarios/${usuario.uid}/faturas`), faturasMigradas).catch(console.error);
+
+      // ── Reserva de emergência — garante estrutura mínima ──────────────────
+      const reservaRaw = dados.reservaEmergencia || {};
+      const reservaNormalizada = {
+        transacoes: Array.isArray(reservaRaw.transacoes)
+          ? reservaRaw.transacoes
+          : Object.values(reservaRaw.transacoes || {}),
+        taxaCDIAnual: reservaRaw.taxaCDIAnual || 14.9,
+        meta: reservaRaw.meta,
+      };
+
       setSistema({
         dadosPorMes: dadosPorMesMigrado,
         pessoasCadastradas: dados.pessoasCadastradas || [],
         metas: dados.metas || [],
-        reservaEmergencia: dados.reservaEmergencia || { transacoes: [], taxaCDIAnual: 14.9 },
+        reservaEmergencia: reservaNormalizada,
         cartoes: dados.cartoes || [],
-        faturas: dados.faturas || {},
+        faturas: precisaMigrarFaturas ? faturasMigradas : faturasOriginal,
         categoriasCustomizadas: dados.categoriasCustomizadas || [],
       });
     });
@@ -270,7 +303,7 @@ export default function DashboardPage() {
       if (!novasFaturas[mesKey]) return;
       novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
         if (f.cartaoId !== cartaoId) return f;
-        const novosItens = f.itens.filter(i => i.id !== itemId);
+        const novosItens = (f.itens || []).filter(i => i.id !== itemId);
         return { ...f, itens: novosItens, totalFatura: novosItens.reduce((s, i) => s + i.valor, 0) };
       });
       await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
@@ -285,7 +318,7 @@ export default function DashboardPage() {
       if (!novasFaturas[mesKey]) return;
       novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
         if (f.cartaoId !== cartaoId) return f;
-        const novosItens = f.itens.map(i => i.id === item.id ? item : i);
+        const novosItens = (f.itens || []).map(i => i.id === item.id ? item : i);
         return { ...f, itens: novosItens, totalFatura: novosItens.reduce((s, i) => s + i.valor, 0) };
       });
       await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
@@ -309,6 +342,7 @@ export default function DashboardPage() {
         const cartaoId = itensDoMes[0].cartaoId;
         const existente = novasFaturas[mesKey].find((f: any) => f.cartaoId === cartaoId);
         if (existente) {
+          existente.itens = existente.itens || [];
           existente.itens.push(...itensDoMes);
           existente.totalFatura = existente.itens.reduce((s: number, i: any) => s + i.valor, 0);
         } else {
@@ -347,6 +381,15 @@ export default function DashboardPage() {
       await set(ref(database, `usuarios/${usuario.uid}/categoriasCustomizadas`), categorias);
       showToast('Categorias salvas!', 'sucesso');
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
+  };
+
+  // ─── Reserva de Emergência ────────────────────────────────────────────────
+  const handleSalvarReserva = async (reserva: any) => {
+    if (!usuario) return;
+    try {
+      await set(ref(database, `usuarios/${usuario.uid}/reservaEmergencia`), reserva);
+      showToast('Reserva atualizada!', 'sucesso');
+    } catch { showToast('Erro ao salvar reserva', 'erro'); }
   };
 
   const calcularSaldoVale = () => {
@@ -465,6 +508,7 @@ export default function DashboardPage() {
 
           {tabAtiva === 'dashboard' && (
             <div>
+              {/* ── Cards de resumo ── */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
@@ -512,11 +556,19 @@ export default function DashboardPage() {
               <AlertaFaturas cartoes={sistema.cartoes} faturas={sistema.faturas} />
               <InsightsInteligentes transacoesAtual={transacoes} transacoesAnterior={transacoesAnterior} />
 
+              {/* ── Gráficos ── */}
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '1.5rem', marginBottom: '1.5rem' }}>
                 <GraficoPizza categorias={calcularCategorias()} />
                 <GraficoEvolucao dados={calcularEvolucao()} />
               </div>
 
+              {/* ── Reserva de Emergência ── */}
+              <ReservaEmergencia
+              reserva={sistema.reservaEmergencia as any}
+                onSalvar={handleSalvarReserva}
+              />
+
+              {/* ── Top 5 Maiores Gastos ── */}
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
                 {transacoes.filter(t => t.tipo === 'despesa').sort((a, b) => b.valor - a.valor).slice(0, 5).map((t, i) => (

@@ -28,6 +28,9 @@ export function formatarDataCurta(dataString: string): string {
   });
 }
 
+// Categorias de receita que são benefícios separados — não entram no "Disponível" nem no total de receitas
+const CATEGORIAS_BENEFICIO = ['Vale Alimentação', 'Vale Refeição', 'Vale Transporte'];
+
 export function calcularResumo(transacoes: Transacao[], filtro: string = 'todos'): Resumo {
   let totalReceitas = 0;
   let totalDespesas = 0;
@@ -39,6 +42,8 @@ export function calcularResumo(transacoes: Transacao[], filtro: string = 'todos'
     if (!pertenceAoFiltro) return;
 
     if (t.tipo === 'renda') {
+      // Benefícios (vale alimentação, etc.) ficam no card próprio — não somam aqui
+      if (CATEGORIAS_BENEFICIO.includes(t.categoria)) return;
       totalReceitas += t.valor;
     } else if (t.tipo === 'despesa') {
       totalDespesas += t.valor;

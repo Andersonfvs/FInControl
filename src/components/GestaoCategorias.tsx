@@ -48,7 +48,8 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
       
       faturasDoMes.forEach(fatura => {
         if (!fatura.paga) {
-          fatura.itens.forEach(item => {
+          // CORREÇÃO: fatura.itens pode ser undefined — usa || [] para evitar crash
+          (fatura.itens || []).forEach(item => {
             if (!categorias[item.categoria]) {
               categorias[item.categoria] = 0;
             }
@@ -299,7 +300,6 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
             const cor = CORES[index % CORES.length];
 
             if (isMobile) {
-              // Mobile: card compacto com barra de progresso
               return (
                 <div
                   key={`categoria-${cat.nome}`}
@@ -370,7 +370,6 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
               );
             }
 
-            // Desktop: linha de tabela original
             return (
               <div
                 key={`categoria-${cat.nome}`}
@@ -485,7 +484,6 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
               </div>
             </div>
 
-            {/* Média — oculta no mobile para não quebrar o layout de 2 colunas */}
             {!isMobile && (
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.5rem' }}>
