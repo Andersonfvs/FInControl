@@ -7,7 +7,7 @@ import { parsearInputMagico } from '@/utils/categorias';
 interface Props {
   usuarioNome: string;
   cartoes: any[];
-  categoriasCustomizadas?: CategoriaCustomizada[]; // cache em memória — vem do estado do dashboard
+  categoriasCustomizadas?: CategoriaCustomizada[];
   onTransacaoCriada: (dados: any) => void;
 }
 
@@ -23,8 +23,6 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
     setProcessando(true);
     setErro('');
 
-    // Passa as categorias customizadas como 4º argumento — já estão em memória,
-    // sem nenhuma consulta extra ao Firebase
     const resultado = parsearInputMagico(texto, usuarioNome, cartoes, categoriasCustomizadas);
 
     if (resultado) {
@@ -58,7 +56,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
           type="text"
           value={texto}
           onChange={e => setTexto(e.target.value)}
-          placeholder='Ex: "50 gasolina", "80 mercado credito nubank", "200 shopee receita"'
+          placeholder='Ex: "50 gasolina 45000km", "80 mercado credito nubank", "200 shopee receita"'
           disabled={processando}
           style={{
             flex: 1,
@@ -101,7 +99,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
       )}
 
       <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '0.5rem' }}>
-        💡 <strong>Débito:</strong> "50 gasolina" • <strong>Crédito:</strong> "80 mercado credito nubank" • <strong>Receita:</strong> "200 shopee receita"
+        💡 <strong>Débito:</strong> "50 gasolina" • <strong>Crédito:</strong> "80 mercado credito nubank" • <strong>Receita:</strong> "200 shopee receita" • <strong>KM:</strong> "150 gasolina 45000km"
       </div>
     </div>
   );

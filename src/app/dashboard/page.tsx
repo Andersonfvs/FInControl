@@ -24,6 +24,8 @@ import InsightsInteligentes from '@/components/InsightsInteligentes';
 import AlertaFaturas from '@/components/AlertaFaturas';
 import AtalhosRapidos from '@/components/AtalhosRapidos';
 import ReservaEmergencia from '@/components/ReservaEmergencia';
+import MelhorCartao from '@/components/MelhorCartao';
+import CustoKm from '@/components/CustoKm';
 
 type ToastTipo = 'sucesso' | 'erro' | 'aviso' | 'info';
 
@@ -501,9 +503,10 @@ export default function DashboardPage() {
               <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() + 1); setDataReferencia(n); }} style={{ padding: '0.5rem 0.75rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '1rem' }}>→</button>
             </div>
           </div>
-
-          {tabAtiva === 'dashboard' && (
+        
+          {tabAtiva === 'dashboard' && ( 
             <div>
+              <MelhorCartao cartoes={sistema.cartoes} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
@@ -557,7 +560,7 @@ export default function DashboardPage() {
               </div>
 
               <ReservaEmergencia reserva={sistema.reservaEmergencia as any} onSalvar={handleSalvarReserva} />
-
+                <CustoKm dadosPorMes={sistema.dadosPorMes} />
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
                 {transacoes.filter(t => t.tipo === 'despesa').sort((a, b) => b.valor - a.valor).slice(0, 5).map((t, i) => (

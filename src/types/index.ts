@@ -15,6 +15,7 @@ export interface Transacao {
   pago: boolean;
   cartaoId?: string;
   metodoPagamento?: 'dinheiro' | 'cartao' | 'vale_alimentacao';
+  quilometragem?: number; // KM registrado no momento do abastecimento/manutenção
 }
 
 export interface CartaoCredito {
@@ -89,7 +90,7 @@ export interface CategoriaCustomizada {
   nome: string;
   icone: string;
   tipo: 'despesa' | 'renda';
-  palavrasChave?: string[]; // palavras que ativam esta categoria no InputMagico
+  palavrasChave?: string[];
 }
 
 export interface AtalhoRapido {

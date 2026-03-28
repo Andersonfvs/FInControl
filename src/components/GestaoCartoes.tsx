@@ -40,19 +40,42 @@ function detectarCategoriaPorDescricao(desc: string): string {
   if (/ifood|rappi|delivery|pizza|hamburguer|mcdonalds|burger|subway|lanche|restaurante|padaria|cafe/.test(d)) return 'Alimentação';
   if (/farmacia|drogaria|remedio|ultrafarma|drogaraia|pacheco/.test(d)) return 'Saúde';
   if (/hospital|clinica|medico|consulta|dentista|laboratorio|exame|plano saude/.test(d)) return 'Saúde';
-  if (/netflix|spotify|amazon|disney|hbo|globoplay|paramount|deezer|apple/.test(d)) return 'Lazer';
-  if (/shopping|loja|lojas|magazine|americanas|casas bahia|renner|riachuelo|c&a|hm/.test(d)) return 'Vestuário';
-  if (/amazon|shopee|mercado ?livre|aliexpress|americanas|submarino|kabum/.test(d)) return 'Compras Online';
+  if (/netflix|spotify|disney|hbo|globoplay|paramount|deezer|apple/.test(d)) return 'Lazer';
+  if (/shopping|lojas|magazine|americanas|casas bahia|renner|riachuelo|c&a|hm/.test(d)) return 'Vestuário';
+  if (/amazon|shopee|mercado ?livre|aliexpress|submarino|kabum/.test(d)) return 'Compras Online';
   if (/escola|faculdade|universidade|curso|mensalidade|colegio/.test(d)) return 'Educação';
   if (/aluguel|condominio|iptu|agua|luz|energia|gas|internet|telefone|claro|vivo|tim|oi/.test(d)) return 'Moradia';
   if (/academia|smartfit|bodytech|bluefit|fitness/.test(d)) return 'Saúde';
   if (/pet|veterinario|racao|cobasi|petz/.test(d)) return 'Outras Despesas';
+  if (/airbnb|hotel|pousada/.test(d)) return 'Lazer';
+  if (/picpay/.test(d)) return 'Outras Despesas';
+  if (/anuidade/.test(d)) return 'Serviços';
   return 'Outras Despesas';
+}
+
+// ─── Converte valor string BR para number ────────────────────────────────────
+function converterValor(str: string): number {
+  const s = str.replace(/\s/g, '');
+  if (s.includes(',') && s.includes('.')) {
+    return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+  } else if (s.includes(',')) {
+    return parseFloat(s.replace(',', '.'));
+  }
+  return parseFloat(s);
+}
+
+// ─── Converte data DD/MM/YY ou DD/MM/YYYY para YYYY-MM-DD ───────────────────
+function converterData(str: string): string {
+  const partes = str.split('/');
+  const dia = partes[0];
+  const mes = partes[1];
+  let ano = partes[2];
+  if (ano.length === 2) ano = '20' + ano;
+  return `${ano}-${mes}-${dia}`;
 }
 
 // ─── Detecção de parcelamento ─────────────────────────────────────────────────
 function detectarParcelamento(desc: string): { atual: number; total: number } | undefined {
-  // Padrões: "3/12", "03/12", "3 DE 12", "PARC 3/12", "PARCELA 3/12"
   const match =
     desc.match(/\b(\d{1,2})\s*[\/\-]\s*(\d{1,2})\b/) ||
     desc.match(/(\d{1,2})\s+de\s+(\d{1,2})/i) ||
@@ -66,18 +89,92 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
   return undefined;
 }
 
-// ─── Parser universal de texto de fatura ────────────────────────────────────
-function parsearTextoFatura(texto: string): LinhaExtrato[] {
+// ─── Detecta se o PDF é da Riachuelo/Midway ──────────────────────────────────
+function isRiachuelo(texto: string): boolean {
+  return /midway|riachuelo/i.test(texto.slice(0, 500));
+}
+
+// ─── Parser específico Riachuelo/Midway ──────────────────────────────────────
+// Formato das linhas:
+//   DD/MM/YY 026 DESCRIÇÃO [VALOR_ORIGINAL PARC/TOTAL] + VALOR_MES
+//   DD/MM/YY 001 PAGAMENTO - VALOR  ← ignorar
+//   DD/MM/YY 001 ANUIDADE ... PARC/TOTAL + VALOR_MES ← incluir
+function parsearRiachuelo(texto: string): LinhaExtrato[] {
+  const resultado: LinhaExtrato[] = [];
+
+  // Cada transação começa com DD/MM/YY seguido de 3 dígitos de código
+  // Captura: data, código, tudo até o sinal + ou -, e o valor final
+  const regexLinha = /(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+?)\s+([+-])\s+([\d.,]+)(?:\s*$)/gm;
+
+  let match: RegExpExecArray | null;
+  while ((match = regexLinha.exec(texto)) !== null) {
+    const [, dataStr, codigo, meio, sinal, valorStr] = match;
+
+    // Ignora pagamentos (código 001 com sinal -)
+    if (codigo === '001' && sinal === '-') continue;
+
+    // Ignora linhas com sinal negativo que não sejam créditos esperados
+    if (sinal === '-') continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const data = converterData(dataStr);
+
+    // No campo "meio" pode vir: "DESCRIÇÃO VALOR_ORIGINAL PARC/TOTAL"
+    // Precisamos extrair a descrição e o parcelamento
+    // Exemplo: "MERCADOLIVRE*ALLIEDTE 2.999,00 10/10"
+    // Exemplo: "PIZZARIA DI NAPOLI" (sem parcelamento)
+    // Exemplo: "ANUIDADE RIACHUELO - TITULAR 01/12"
+
+    let descricao = meio.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    // Extrai parcelamento do final (XX/YY)
+    const matchParc = descricao.match(/\b(\d{1,2})\/(\d{1,2})\s*$/);
+    if (matchParc) {
+      const atual = parseInt(matchParc[1]);
+      const total = parseInt(matchParc[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) {
+        parcelas = { atual, total };
+      }
+      descricao = descricao.replace(matchParc[0], '').trim();
+    }
+
+    // Remove o valor original que pode aparecer antes do parcelamento
+    // Ex: "MERCADOLIVRE*ALLIEDTE 2.999,00" → "MERCADOLIVRE*ALLIEDTE"
+    descricao = descricao.replace(/\s+[\d.]+,\d{2}\s*$/, '').trim();
+
+    // Remove código de estabelecimento numérico no início (ex: "026 ")
+    descricao = descricao.replace(/^\d{3}\s+/, '').trim();
+
+    if (descricao.length < 2) continue;
+
+    const categoria = detectarCategoriaPorDescricao(descricao);
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria,
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
+// ─── Parser universal de texto de fatura (fallback para outros bancos) ────────
+function parsearGenerico(texto: string): LinhaExtrato[] {
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
   const resultado: LinhaExtrato[] = [];
 
-  // Regex para data: DD/MM/YYYY, DD/MM/YY, YYYY-MM-DD
   const regexData = /(\d{2}\/\d{2}\/\d{2,4}|\d{4}-\d{2}-\d{2})/;
-  // Regex para valor monetário: 1.234,56 ou 1234.56 ou R$ 123,45
   const regexValor = /R?\$?\s*-?\s*(\d{1,3}(?:[.,]\d{3})*(?:[.,]\d{2}))/;
 
   for (const linha of linhas) {
-    // Ignora linhas de cabeçalho, totais, pagamentos
     if (/total|pagamento|saldo|limite|vencimento|fechamento|fatura|extrato|data\b.*descri|valor\b/i.test(linha)) continue;
     if (/^[-=_*#]+$/.test(linha)) continue;
     if (linha.length < 10) continue;
@@ -87,29 +184,14 @@ function parsearTextoFatura(texto: string): LinhaExtrato[] {
 
     if (!matchData || !matchValor) continue;
 
-    // Converte data para YYYY-MM-DD
     let dataStr = matchData[1];
     if (dataStr.includes('/')) {
-      const partes = dataStr.split('/');
-      const dia = partes[0];
-      const mes = partes[1];
-      let ano = partes[2];
-      if (ano.length === 2) ano = '20' + ano;
-      dataStr = `${ano}-${mes}-${dia}`;
+      dataStr = converterData(dataStr);
     }
 
-    // Converte valor: remove R$, espaços, trata vírgula/ponto
-    let valorStr = matchValor[1].replace(/\s/g, '');
-    // Formato brasileiro: 1.234,56
-    if (valorStr.includes(',') && valorStr.includes('.')) {
-      valorStr = valorStr.replace(/\./g, '').replace(',', '.');
-    } else if (valorStr.includes(',')) {
-      valorStr = valorStr.replace(',', '.');
-    }
-    const valor = parseFloat(valorStr);
+    const valor = converterValor(matchValor[1]);
     if (isNaN(valor) || valor <= 0) continue;
 
-    // Extrai descrição: texto entre data e valor
     let descricao = linha
       .replace(matchData[1], '')
       .replace(matchValor[0], '')
@@ -117,7 +199,6 @@ function parsearTextoFatura(texto: string): LinhaExtrato[] {
       .replace(/\s{2,}/g, ' ')
       .trim();
 
-    // Remove lixo comum no início/fim
     descricao = descricao.replace(/^[-•*\s]+/, '').replace(/[-•*\s]+$/, '').trim();
     if (descricao.length < 3) continue;
 
@@ -138,6 +219,15 @@ function parsearTextoFatura(texto: string): LinhaExtrato[] {
   return resultado;
 }
 
+// ─── Roteador de parser ───────────────────────────────────────────────────────
+function parsearTextoFatura(texto: string): LinhaExtrato[] {
+  if (isRiachuelo(texto)) {
+    const resultado = parsearRiachuelo(texto);
+    if (resultado.length > 0) return resultado;
+  }
+  return parsearGenerico(texto);
+}
+
 // ─── Comparação com transações existentes (anti-duplicação) ──────────────────
 function conciliar(
   linhas: LinhaExtrato[],
@@ -145,7 +235,6 @@ function conciliar(
   transacoesPorMes: { [mesKey: string]: Transacao[] } | undefined,
   cartaoId: string,
 ): LinhaExtrato[] {
-  // Coleta todos os itens de fatura deste cartão
   const itensFatura: ItemFatura[] = [];
   for (const mesKey in faturas) {
     const faturasDoMes = faturas[mesKey] || [];
@@ -156,7 +245,6 @@ function conciliar(
     }
   }
 
-  // Coleta todas as transações de cartão
   const transacoesCartao: Transacao[] = [];
   if (transacoesPorMes) {
     for (const mesKey in transacoesPorMes) {
@@ -169,7 +257,6 @@ function conciliar(
   return linhas.map(linha => {
     const dataLinha = new Date(linha.data + 'T00:00:00');
 
-    // Verifica nos itens de fatura
     const achouFatura = itensFatura.some(item => {
       const diffValor = Math.abs(item.valor - linha.valor);
       if (diffValor > 0.02) return false;
@@ -178,7 +265,6 @@ function conciliar(
       return diffDias <= 3;
     });
 
-    // Verifica nas transações pagas
     const achouTransacao = transacoesCartao.some(t => {
       const diffValor = Math.abs(t.valor - linha.valor);
       if (diffValor > 0.02) return false;
@@ -215,7 +301,6 @@ export default function GestaoCartoes({
   const [editValor, setEditValor] = useState('');
   const [editCategoria, setEditCategoria] = useState('');
 
-  // ── Estados do modal de importação ──────────────────────────────────────────
   const [modalImportAberto, setModalImportAberto] = useState(false);
   const [cartaoImportId, setCartaoImportId] = useState('');
   const [processando, setProcessando] = useState(false);
@@ -225,7 +310,6 @@ export default function GestaoCartoes({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfJsCarregado = useRef(false);
 
-  // ── Carrega PDF.js uma vez ──────────────────────────────────────────────────
   useEffect(() => {
     if (pdfJsCarregado.current) return;
     const script = document.createElement('script');
@@ -238,7 +322,6 @@ export default function GestaoCartoes({
     document.head.appendChild(script);
   }, []);
 
-  // ── ESC fecha modal de importação ────────────────────────────────────────────
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') fecharModalImport(); };
     if (modalImportAberto) window.addEventListener('keydown', handleEsc);
@@ -265,7 +348,6 @@ export default function GestaoCartoes({
     const arquivo = e.target.files?.[0];
     if (!arquivo) return;
 
-    // Valida extensão
     if (!arquivo.name.toLowerCase().endsWith('.pdf')) {
       setErroImport('Selecione um arquivo PDF válido.');
       return;
@@ -290,10 +372,20 @@ export default function GestaoCartoes({
       for (let p = 1; p <= pdf.numPages; p++) {
         const pagina = await pdf.getPage(p);
         const conteudo = await pagina.getTextContent();
-        const textoPagina = conteudo.items
-          .map((item: any) => item.str)
-          .join(' ');
-        textoCompleto += textoPagina + '\n';
+        // Preserva quebras de linha por item para o parser Riachuelo funcionar
+        const itens = conteudo.items as any[];
+        let linhaPagina = '';
+        let yAnterior: number | null = null;
+        for (const item of itens) {
+          const y = Math.round(item.transform[5]);
+          if (yAnterior !== null && Math.abs(y - yAnterior) > 3) {
+            textoCompleto += linhaPagina.trim() + '\n';
+            linhaPagina = '';
+          }
+          linhaPagina += item.str + ' ';
+          yAnterior = y;
+        }
+        if (linhaPagina.trim()) textoCompleto += linhaPagina.trim() + '\n';
       }
 
       if (!textoCompleto.trim()) {
@@ -317,7 +409,6 @@ export default function GestaoCartoes({
       setErroImport('Erro ao processar o PDF. Tente novamente.');
     } finally {
       setProcessando(false);
-      // Reseta o input para permitir re-upload do mesmo arquivo
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -326,14 +417,11 @@ export default function GestaoCartoes({
     if (!onLancarItensCSV) return;
     setLancandoId(linha.id);
 
-    const hoje = new Date();
     const dataBase = new Date(linha.data + 'T00:00:00');
     const parcelas = linha.parcelas;
-
     const itens: ItemFatura[] = [];
 
     if (parcelas && parcelas.atual <= parcelas.total) {
-      // Lança da parcela atual até a última
       for (let i = parcelas.atual; i <= parcelas.total; i++) {
         const dataParcela = new Date(dataBase);
         dataParcela.setMonth(dataBase.getMonth() + (i - parcelas.atual));
@@ -365,11 +453,7 @@ export default function GestaoCartoes({
     }
 
     onLancarItensCSV(cartaoImportId, itens);
-
-    // Marca como conciliado na lista
-    setLinhasExtrato(prev =>
-      prev.map(l => l.id === linha.id ? { ...l, status: 'conciliado' } : l)
-    );
+    setLinhasExtrato(prev => prev.map(l => l.id === linha.id ? { ...l, status: 'conciliado' } : l));
     setLancandoId(null);
   };
 
@@ -378,7 +462,6 @@ export default function GestaoCartoes({
     pendentes.forEach(l => handleLancarItem(l));
   };
 
-  // ── Funções existentes ───────────────────────────────────────────────────────
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
     return faturasDoMes.find(f => f.cartaoId === cartaoId) || null;
@@ -453,7 +536,6 @@ export default function GestaoCartoes({
 
             return (
               <div key={cartao.id} style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', overflow: 'hidden' }}>
-                {/* Topo colorido */}
                 <div style={{ background: cartao.cor || '#06b6d4', padding: '1.5rem', color: 'white', position: 'relative', minHeight: isMobile ? '120px' : '160px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '2rem' }}>
                     <div>
@@ -461,7 +543,6 @@ export default function GestaoCartoes({
                       <div style={{ fontSize: isMobile ? '1.125rem' : '1.25rem', fontWeight: '700' }}>{cartao.nome}</div>
                     </div>
 
-                    {/* Menu 3 pontinhos */}
                     <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => setMenuAberto(menuEsteAberto ? null : cartao.id)}
@@ -475,31 +556,24 @@ export default function GestaoCartoes({
 
                       {menuEsteAberto && (
                         <div style={{ position: 'absolute', top: '110%', right: 0, background: 'white', borderRadius: '0.5rem', boxShadow: '0 8px 24px rgba(0,0,0,0.15)', border: '1px solid #e5e7eb', zIndex: 50, minWidth: '190px', overflow: 'hidden' }}>
-                          <button
-                            onClick={() => { onEditarCartao(cartao); setMenuAberto(null); }}
+                          <button onClick={() => { onEditarCartao(cartao); setMenuAberto(null); }}
                             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: '#374151', textAlign: 'left' }}
                             onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                          >
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                             ✏️ Editar Cartão
                           </button>
                           <div style={{ height: '1px', background: '#f3f4f6' }} />
-                          {/* NOVO: Importar Extrato */}
-                          <button
-                            onClick={() => { abrirModalImport(cartao.id); setMenuAberto(null); }}
+                          <button onClick={() => { abrirModalImport(cartao.id); setMenuAberto(null); }}
                             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.75rem 1rem', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: '#374151', textAlign: 'left' }}
                             onMouseEnter={e => e.currentTarget.style.background = '#f9fafb'}
-                            onMouseLeave={e => e.currentTarget.style.background = 'none'}
-                          >
+                            onMouseLeave={e => e.currentTarget.style.background = 'none'}>
                             📂 Importar Extrato
                           </button>
                           <div style={{ height: '1px', background: '#f3f4f6' }} />
-                          <button
-                            onClick={() => handleExcluirCartao(cartao.id)}
+                          <button onClick={() => handleExcluirCartao(cartao.id)}
                             style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%', padding: '0.75rem 1rem', background: excluindo ? '#fef2f2' : 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', color: excluindo ? '#dc2626' : '#6b7280', textAlign: 'left', fontWeight: excluindo ? '700' : '400' }}
                             onMouseEnter={e => { e.currentTarget.style.background = '#fef2f2'; e.currentTarget.style.color = '#dc2626'; }}
-                            onMouseLeave={e => { if (!excluindo) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#6b7280'; } }}
-                          >
+                            onMouseLeave={e => { if (!excluindo) { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = '#6b7280'; } }}>
                             {excluindo ? '⚠️ Confirmar?' : '🗑️ Excluir Cartão'}
                           </button>
                         </div>
@@ -513,7 +587,6 @@ export default function GestaoCartoes({
                   </div>
                 </div>
 
-                {/* Corpo */}
                 <div style={{ padding: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                     <div>
@@ -534,33 +607,24 @@ export default function GestaoCartoes({
                   </div>
 
                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button
-                      onClick={() => onAdicionarCompra(cartao.id)}
-                      style={{ flex: 1, padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer' }}
-                    >
+                    <button onClick={() => onAdicionarCompra(cartao.id)}
+                      style={{ flex: 1, padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer' }}>
                       + Compra
                     </button>
-
                     {totalFatura > 0 && !estaPaga && (
-                      <button
-                        onClick={() => onPagarFatura(cartao.id, mesReferencia)}
-                        style={{ flex: 1, padding: '0.625rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer' }}
-                      >
+                      <button onClick={() => onPagarFatura(cartao.id, mesReferencia)}
+                        style={{ flex: 1, padding: '0.625rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', fontWeight: '500', cursor: 'pointer' }}>
                         {isMobile ? 'Pagar' : 'Pagar Fatura'}
                       </button>
                     )}
-
                     {itensFatura.length > 0 && (
-                      <button
-                        onClick={() => setCartaoSelecionado(cartaoSelecionado === cartao.id ? null : cartao.id)}
-                        style={{ padding: '0.625rem 0.75rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', cursor: 'pointer' }}
-                      >
+                      <button onClick={() => setCartaoSelecionado(cartaoSelecionado === cartao.id ? null : cartao.id)}
+                        style={{ padding: '0.625rem 0.75rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.8125rem', cursor: 'pointer' }}>
                         {cartaoSelecionado === cartao.id ? '▼' : '▶'}
                       </button>
                     )}
                   </div>
 
-                  {/* Lista de itens da fatura */}
                   {cartaoSelecionado === cartao.id && itensFatura.length > 0 && (
                     <div style={{ marginTop: '1rem', paddingTop: '1rem', borderTop: '1px solid #e5e7eb' }}>
                       <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#374151', marginBottom: '0.75rem' }}>Itens da Fatura:</div>
@@ -585,8 +649,14 @@ export default function GestaoCartoes({
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', flexShrink: 0 }}>
                                   <span style={{ fontWeight: '600', color: '#ef4444', marginRight: '0.25rem', fontSize: '0.875rem' }}>{formatarMoeda(item.valor)}</span>
-                                  <button onClick={() => abrirEdicaoItem(cartao.id, item)} title="Editar item" style={{ background: '#f3f4f6', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem' }} onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'} onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}>✏️</button>
-                                  <button onClick={() => { if (confirm(`Remover "${item.descricao}" da fatura?`)) onExcluirItemFatura(cartao.id, item.id, mesReferencia); }} title="Remover da fatura" style={{ background: '#fef2f2', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem' }} onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'} onMouseLeave={e => e.currentTarget.style.background = '#fef2f2'}>🗑️</button>
+                                  <button onClick={() => abrirEdicaoItem(cartao.id, item)} title="Editar item"
+                                    style={{ background: '#f3f4f6', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#e5e7eb'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#f3f4f6'}>✏️</button>
+                                  <button onClick={() => { if (confirm(`Remover "${item.descricao}" da fatura?`)) onExcluirItemFatura(cartao.id, item.id, mesReferencia); }} title="Remover da fatura"
+                                    style={{ background: '#fef2f2', border: 'none', borderRadius: '0.375rem', cursor: 'pointer', padding: '0.2rem 0.45rem', fontSize: '0.75rem' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = '#fee2e2'}
+                                    onMouseLeave={e => e.currentTarget.style.background = '#fef2f2'}>🗑️</button>
                                 </div>
                               </div>
                             )}
@@ -595,14 +665,19 @@ export default function GestaoCartoes({
                               <div style={{ padding: '0.75rem', margin: '0.25rem 0 0.5rem', background: '#f0f9ff', borderRadius: '0.5rem', border: '1px solid #bae6fd' }}>
                                 <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#0369a1', marginBottom: '0.5rem' }}>✏️ Editando item</div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                  <input type="text" value={editDescricao} onChange={e => setEditDescricao(e.target.value)} placeholder="Descrição" style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
+                                  <input type="text" value={editDescricao} onChange={e => setEditDescricao(e.target.value)} placeholder="Descrição"
+                                    style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
                                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
-                                    <input type="number" value={editValor} onChange={e => setEditValor(e.target.value)} placeholder="Valor" style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
-                                    <input type="text" value={editCategoria} onChange={e => setEditCategoria(e.target.value)} placeholder="Categoria" style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
+                                    <input type="number" value={editValor} onChange={e => setEditValor(e.target.value)} placeholder="Valor"
+                                      style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
+                                    <input type="text" value={editCategoria} onChange={e => setEditCategoria(e.target.value)} placeholder="Categoria"
+                                      style={{ padding: '0.5rem 0.625rem', border: '1px solid #bae6fd', borderRadius: '0.375rem', fontSize: '0.8125rem', outline: 'none', background: 'white' }} />
                                   </div>
                                   <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                    <button onClick={salvarEdicaoItem} style={{ flex: 1, padding: '0.5rem', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.8125rem', fontWeight: '600', cursor: 'pointer' }}>💾 Salvar</button>
-                                    <button onClick={() => setItemEditando(null)} style={{ flex: 1, padding: '0.5rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer' }}>Cancelar</button>
+                                    <button onClick={salvarEdicaoItem}
+                                      style={{ flex: 1, padding: '0.5rem', background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.8125rem', fontWeight: '600', cursor: 'pointer' }}>💾 Salvar</button>
+                                    <button onClick={() => setItemEditando(null)}
+                                      style={{ flex: 1, padding: '0.5rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.375rem', fontSize: '0.8125rem', cursor: 'pointer' }}>Cancelar</button>
                                   </div>
                                 </div>
                               </div>
@@ -621,20 +696,14 @@ export default function GestaoCartoes({
 
       {/* ── Modal de Importação de Extrato PDF ─────────────────────────────────── */}
       {modalImportAberto && (
-        <div
-          onClick={fecharModalImport}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}
-        >
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ background: 'white', borderRadius: '0.75rem', width: '100%', maxWidth: '700px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}
-          >
-            {/* Header */}
+        <div onClick={fecharModalImport}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '1rem' }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: 'white', borderRadius: '0.75rem', width: '100%', maxWidth: '700px', maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+
             <div style={{ padding: '1.25rem 1.5rem', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <div>
-                <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: '#374151', margin: 0 }}>
-                  📂 Importar Extrato PDF
-                </h3>
+                <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: '#374151', margin: 0 }}>📂 Importar Extrato PDF</h3>
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
                   Cartão: <strong>{cartoes.find(c => c.id === cartaoImportId)?.nome}</strong>
                 </div>
@@ -642,18 +711,13 @@ export default function GestaoCartoes({
               <button onClick={fecharModalImport} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>✕</button>
             </div>
 
-            {/* Corpo */}
             <div style={{ padding: '1.25rem 1.5rem', overflowY: 'auto', flex: 1 }}>
-
-              {/* Upload */}
               {linhasExtrato.length === 0 && (
                 <div>
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
+                  <div onClick={() => fileInputRef.current?.click()}
                     style={{ border: '2px dashed #e5e7eb', borderRadius: '0.75rem', padding: '2.5rem', textAlign: 'center', cursor: 'pointer', transition: 'border-color 0.2s' }}
                     onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#06b6d4'}
-                    onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#e5e7eb'}
-                  >
+                    onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = '#e5e7eb'}>
                     <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem' }}>📄</div>
                     <div style={{ fontWeight: '600', color: '#374151', marginBottom: '0.375rem' }}>
                       {processando ? 'Processando...' : 'Clique para selecionar o PDF'}
@@ -662,13 +726,7 @@ export default function GestaoCartoes({
                       Fatura do cartão em PDF — Nubank, Inter, Itaú, Riachuelo, PicPay, Caixa e outros
                     </div>
                   </div>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept=".pdf"
-                    onChange={handleArquivoSelecionado}
-                    style={{ display: 'none' }}
-                  />
+                  <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleArquivoSelecionado} style={{ display: 'none' }} />
 
                   {processando && (
                     <div style={{ textAlign: 'center', padding: '1.5rem', color: '#6b7280' }}>
@@ -689,10 +747,8 @@ export default function GestaoCartoes({
                 </div>
               )}
 
-              {/* Resultados */}
               {linhasExtrato.length > 0 && (
                 <div>
-                  {/* Resumo */}
                   <div style={{ display: 'flex', gap: '1rem', marginBottom: '1.25rem', flexWrap: 'wrap' }}>
                     <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '0.5rem', padding: '0.75rem 1rem', flex: 1, textAlign: 'center' }}>
                       <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#10b981' }}>{conciliados}</div>
@@ -709,26 +765,20 @@ export default function GestaoCartoes({
                   </div>
 
                   {pendentes > 1 && (
-                    <button
-                      onClick={handleLancarTodos}
-                      style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg, #06b6d4, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', marginBottom: '1rem' }}
-                    >
+                    <button onClick={handleLancarTodos}
+                      style={{ width: '100%', padding: '0.75rem', background: 'linear-gradient(135deg, #06b6d4, #0284c7)', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer', marginBottom: '1rem' }}>
                       ⚡ Lançar Todos os Pendentes ({pendentes})
                     </button>
                   )}
 
-                  {/* Tabela */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                     {linhasExtrato.map(linha => (
                       <div key={linha.id} style={{
-                        display: 'flex', alignItems: 'center', gap: '0.75rem',
-                        padding: '0.75rem', borderRadius: '0.5rem',
+                        display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', borderRadius: '0.5rem',
                         background: linha.status === 'conciliado' ? '#f0fdf4' : '#fafafa',
                         border: `1px solid ${linha.status === 'conciliado' ? '#bbf7d0' : '#e5e7eb'}`,
                       }}>
-                        <span style={{ fontSize: '1.125rem', flexShrink: 0 }}>
-                          {linha.status === 'conciliado' ? '✅' : '⚠️'}
-                        </span>
+                        <span style={{ fontSize: '1.125rem', flexShrink: 0 }}>{linha.status === 'conciliado' ? '✅' : '⚠️'}</span>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontWeight: '600', fontSize: '0.875rem', color: '#374151', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {linha.descricao}
@@ -742,15 +792,10 @@ export default function GestaoCartoes({
                             {new Date(linha.data + 'T00:00:00').toLocaleDateString('pt-BR')} · {linha.categoria}
                           </div>
                         </div>
-                        <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '0.9rem', flexShrink: 0 }}>
-                          {formatarMoeda(linha.valor)}
-                        </div>
+                        <div style={{ fontWeight: '700', color: '#ef4444', fontSize: '0.9rem', flexShrink: 0 }}>{formatarMoeda(linha.valor)}</div>
                         {linha.status === 'pendente' && onLancarItensCSV && (
-                          <button
-                            onClick={() => handleLancarItem(linha)}
-                            disabled={lancandoId === linha.id}
-                            style={{ padding: '0.375rem 0.75rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                          >
+                          <button onClick={() => handleLancarItem(linha)} disabled={lancandoId === linha.id}
+                            style={{ padding: '0.375rem 0.75rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '600', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
                             {lancandoId === linha.id ? '...' : '+ Lançar'}
                           </button>
                         )}
@@ -758,19 +803,17 @@ export default function GestaoCartoes({
                     ))}
                   </div>
 
-                  <button
-                    onClick={() => { setLinhasExtrato([]); setErroImport(''); }}
-                    style={{ width: '100%', padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', marginTop: '1rem' }}
-                  >
+                  <button onClick={() => { setLinhasExtrato([]); setErroImport(''); }}
+                    style={{ width: '100%', padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', marginTop: '1rem' }}>
                     📂 Carregar outro PDF
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Footer */}
             <div style={{ padding: '1rem 1.5rem', borderTop: '1px solid #e5e7eb', flexShrink: 0 }}>
-              <button onClick={fecharModalImport} style={{ width: '100%', padding: '0.75rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
+              <button onClick={fecharModalImport}
+                style={{ width: '100%', padding: '0.75rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
                 Fechar
               </button>
             </div>

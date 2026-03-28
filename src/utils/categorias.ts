@@ -53,10 +53,10 @@ export interface DadosInputMagico {
   cartaoNome?: string;
   pago: boolean;
   parcelas?: number;
+  quilometragem?: number; // KM do odômetro — ex: "150 gasolina 45000km"
 }
 
 // ─── Vocabulário fixo expandido ───────────────────────────────────────────────
-// Inclui variações regionais, marcas e sinônimos comuns
 const MAPA_CATEGORIAS_PALAVRAS: { palavras: string[]; categoria: string }[] = [
   {
     palavras: [
@@ -159,6 +159,15 @@ const MAPA_CATEGORIAS_PALAVRAS: { palavras: string[]; categoria: string }[] = [
     ],
     categoria: 'Outras Despesas',
   },
+  // ── Manutenção de veículo — categoria própria para cálculo de custo/km ──
+  {
+    palavras: [
+      'manutencao', 'manutenção', 'mecanico', 'mecânico', 'revisao', 'revisão',
+      'troca de oleo', 'oleo', 'pneu', 'freio', 'bateria', 'filtro', 'correia',
+      'funilaria', 'borracharia', 'alinhamento', 'balanceamento',
+    ],
+    categoria: 'Manutenção Veículo',
+  },
 ];
 
 const CARTOES_CONHECIDOS: { [key: string]: string } = {
@@ -194,11 +203,6 @@ function buscarCartaoPorNome(resto: string, cartoesDisponiveis: any[]): { cartao
 
 // ─────────────────────────────────────────────────────────────
 // FUNÇÃO PRINCIPAL DO PARSER
-// Parâmetros:
-//   input               — texto digitado pelo usuário
-//   usuarioNome         — nome do usuário logado
-//   cartoesDisponiveis  — cartões cadastrados no Firebase (para match de cartão)
-//   categoriasCustomizadas — categorias do usuário com palavrasChave (cache em memória)
 // ─────────────────────────────────────────────────────────────
 export function parsearInputMagico(
   input: string,
@@ -221,7 +225,21 @@ export function parsearInputMagico(
 
   let resto = textoLower.replace(matchValor[1], '').trim();
 
-  // ── 2. Extrair data ───────────────────────────────────────
+  // ── 2. Extrair QUILOMETRAGEM — ex: "45000km", "45.000km", "45000 km" ──────
+  // Feito antes de qualquer outra extração para não confundir com valores/datas
+  let quilometragem: number | undefined;
+  const regexKm = /(\d{1,6}(?:[.,]\d{3})?)\s*km\b/i;
+  const matchKm = resto.match(regexKm);
+  if (matchKm) {
+    const kmStr = matchKm[1].replace(/[.,]/g, ''); // remove separadores de milhar
+    const kmNum = parseInt(kmStr);
+    if (!isNaN(kmNum) && kmNum > 0) {
+      quilometragem = kmNum;
+    }
+    resto = resto.replace(matchKm[0], '').trim();
+  }
+
+  // ── 3. Extrair data ───────────────────────────────────────
   let data = new Date().toISOString().split('T')[0];
 
   if (resto.includes('ontem')) {
@@ -246,7 +264,7 @@ export function parsearInputMagico(
     }
   }
 
-  // ── 3. Extrair pessoa ─────────────────────────────────────
+  // ── 4. Extrair pessoa ─────────────────────────────────────
   let pessoa = usuarioNome;
   if (resto.includes('anderson')) {
     pessoa = 'Anderson Ferreira';
@@ -256,13 +274,13 @@ export function parsearInputMagico(
     resto = resto.replace(/evelin(\s+mulbaier)?/, '').trim();
   }
 
-  // ── 4. Detectar RECEITA explícita ─────────────────────────
+  // ── 5. Detectar RECEITA explícita ─────────────────────────
   const forcaReceita = resto.includes('receita') || resto.includes('renda') || resto.includes('salario') || resto.includes('salário');
   if (forcaReceita) {
     resto = resto.replace(/receita|renda|salario|salário/g, '').trim();
   }
 
-  // ── 5. Extrair PARCELAS — ex: "3x", "12x" ─────────────────
+  // ── 6. Extrair PARCELAS — ex: "3x", "12x" ─────────────────
   let parcelas: number | undefined;
   const regexParcelas = /(\d+)\s*x\b/;
   const matchParcelas = resto.match(regexParcelas);
@@ -272,7 +290,7 @@ export function parsearInputMagico(
     resto = resto.replace(matchParcelas[0], '').trim();
   }
 
-  // ── 6. Detectar método de pagamento ───────────────────────
+  // ── 7. Detectar método de pagamento ───────────────────────
   let metodoPagamento: 'dinheiro' | 'cartao' = 'dinheiro';
   let cartaoId: string | undefined;
   let cartaoNome: string | undefined;
@@ -285,7 +303,6 @@ export function parsearInputMagico(
     pago = false;
     resto = resto.replace(/credito|crédito|cartao|cartão/g, '').trim();
 
-    // PASSO 1: mapa fixo de cartões conhecidos (nubank, inter, etc.)
     for (const [palavra, nomeCartao] of Object.entries(CARTOES_CONHECIDOS)) {
       if (resto.includes(palavra)) {
         cartaoNome = nomeCartao;
@@ -301,7 +318,6 @@ export function parsearInputMagico(
       }
     }
 
-    // PASSO 2: busca pelo nome exato do cartão cadastrado (ex: "Riachuelo", "XP", etc.)
     if (!cartaoId && cartoesDisponiveis) {
       const resultado = buscarCartaoPorNome(resto, cartoesDisponiveis);
       if (resultado) {
@@ -311,14 +327,12 @@ export function parsearInputMagico(
       }
     }
 
-    // PASSO 3: se só tem 1 cartão cadastrado, usa ele automaticamente
     if (!cartaoId && cartoesDisponiveis && cartoesDisponiveis.length === 1) {
       cartaoId = cartoesDisponiveis[0].id;
       cartaoNome = cartoesDisponiveis[0].nome;
     }
   }
 
-  // Se tem parcelas mas não detectou crédito, assume crédito
   if (parcelas && parcelas > 1 && metodoPagamento === 'dinheiro') {
     metodoPagamento = 'cartao';
     pago = false;
@@ -335,17 +349,13 @@ export function parsearInputMagico(
     pago = true;
   }
 
-  // ── 7. Detectar tipo (renda ou despesa) ───────────────────
+  // ── 8. Detectar tipo (renda ou despesa) ───────────────────
   const tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
 
-  // ── 8. Detectar categoria ─────────────────────────────────
-  // PRIORIDADE 1: palavras-chave das categorias customizadas do usuário (cache em memória)
-  // PRIORIDADE 2: mapa fixo expandido
-  // PRIORIDADE 3: fallback padrão
+  // ── 9. Detectar categoria ─────────────────────────────────
   let categoria = tipo === 'renda' ? 'Outras Receitas' : 'Outras Despesas';
 
   if (tipo === 'renda') {
-    // Para receitas, verifica customizadas primeiro
     if (categoriasCustomizadas && categoriasCustomizadas.length > 0) {
       for (const cat of categoriasCustomizadas) {
         if (cat.tipo !== 'renda') continue;
@@ -354,7 +364,6 @@ export function parsearInputMagico(
         if (achou) { categoria = cat.nome; break; }
       }
     }
-    // Fallback fixo para receitas
     if (categoria === 'Outras Receitas') {
       if (resto.includes('salario') || resto.includes('salário')) categoria = 'Salário';
       else if (resto.includes('vale')) categoria = 'Vale Alimentação';
@@ -362,22 +371,15 @@ export function parsearInputMagico(
       else if (resto.includes('freelance') || resto.includes('freela')) categoria = 'Freelance';
     }
   } else {
-    // PRIORIDADE 1: palavras-chave do usuário (mais específicas)
     let achouCustom = false;
     if (categoriasCustomizadas && categoriasCustomizadas.length > 0) {
       for (const cat of categoriasCustomizadas) {
         if (cat.tipo !== 'despesa') continue;
         if (!cat.palavrasChave || cat.palavrasChave.length === 0) continue;
         const achou = cat.palavrasChave.some(p => p.trim() && resto.includes(p.toLowerCase().trim()));
-        if (achou) {
-          categoria = cat.nome;
-          achouCustom = true;
-          break;
-        }
+        if (achou) { categoria = cat.nome; achouCustom = true; break; }
       }
     }
-
-    // PRIORIDADE 2: mapa fixo expandido (fallback)
     if (!achouCustom) {
       for (const { palavras, categoria: cat } of MAPA_CATEGORIAS_PALAVRAS) {
         if (palavras.some(p => resto.includes(p))) { categoria = cat; break; }
@@ -385,7 +387,7 @@ export function parsearInputMagico(
     }
   }
 
-  // ── 9. Extrair descrição ──────────────────────────────────
+  // ── 10. Extrair descrição ─────────────────────────────────
   const IGNORAR = new Set(['de', 'do', 'da', 'dos', 'das', 'no', 'na', 'nos', 'nas', 'em', 'a', 'o', 'e', 'r$', 'reais', 'real', 'pra', 'pro', 'para', 'com', 'um', 'uma']);
   const palavrasResto = resto
     .replace(/[^\w\s]/g, '')
@@ -409,6 +411,7 @@ export function parsearInputMagico(
     cartaoNome,
     pago,
     parcelas,
+    quilometragem,
   };
 }
 
@@ -427,6 +430,7 @@ export function obterCategoriasDisponiveis(): string[] {
     'Vestuário',
     'Serviços',
     'Investimentos',
+    'Manutenção Veículo',
     'Outras Despesas',
   ];
 }
