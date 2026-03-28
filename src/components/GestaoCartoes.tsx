@@ -91,46 +91,31 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
 
 // ─── Detecta se o PDF é da Riachuelo/Midway ──────────────────────────────────
 function isRiachuelo(texto: string): boolean {
-  return /midway|riachuelo/i.test(texto.slice(0, 500));
+  return /midway|riachuelo/i.test(texto.slice(0, 2000));
 }
 
 // ─── Parser específico Riachuelo/Midway ──────────────────────────────────────
-// Formato das linhas:
-//   DD/MM/YY 026 DESCRIÇÃO [VALOR_ORIGINAL PARC/TOTAL] + VALOR_MES
-//   DD/MM/YY 001 PAGAMENTO - VALOR  ← ignorar
-//   DD/MM/YY 001 ANUIDADE ... PARC/TOTAL + VALOR_MES ← incluir
 function parsearRiachuelo(texto: string): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
 
-  // Cada transação começa com DD/MM/YY seguido de 3 dígitos de código
-  // Captura: data, código, tudo até o sinal + ou -, e o valor final
-  const regexLinha = /(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+?)\s+([+-])\s+([\d.,]+)(?:\s*$)/gm;
+  for (const linha of linhas) {
+    const matchLinha = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+?)\s+([+-])\s+([\d.,]+)\s*$/);
+    if (!matchLinha) continue;
 
-  let match: RegExpExecArray | null;
-  while ((match = regexLinha.exec(texto)) !== null) {
-    const [, dataStr, codigo, meio, sinal, valorStr] = match;
+    const [, dataStr, codigo, meio, sinal, valorStr] = matchLinha;
 
-    // Ignora pagamentos (código 001 com sinal -)
-    if (codigo === '001' && sinal === '-') continue;
-
-    // Ignora linhas com sinal negativo que não sejam créditos esperados
+    // Ignora pagamentos (sinal -)
     if (sinal === '-') continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
 
     const data = converterData(dataStr);
-
-    // No campo "meio" pode vir: "DESCRIÇÃO VALOR_ORIGINAL PARC/TOTAL"
-    // Precisamos extrair a descrição e o parcelamento
-    // Exemplo: "MERCADOLIVRE*ALLIEDTE 2.999,00 10/10"
-    // Exemplo: "PIZZARIA DI NAPOLI" (sem parcelamento)
-    // Exemplo: "ANUIDADE RIACHUELO - TITULAR 01/12"
-
     let descricao = meio.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Extrai parcelamento do final (XX/YY)
+    // Extrai parcelamento XX/YY do final
     const matchParc = descricao.match(/\b(\d{1,2})\/(\d{1,2})\s*$/);
     if (matchParc) {
       const atual = parseInt(matchParc[1]);
@@ -141,23 +126,17 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
       descricao = descricao.replace(matchParc[0], '').trim();
     }
 
-    // Remove o valor original que pode aparecer antes do parcelamento
-    // Ex: "MERCADOLIVRE*ALLIEDTE 2.999,00" → "MERCADOLIVRE*ALLIEDTE"
+    // Remove valor original: ex "2.999,00"
     descricao = descricao.replace(/\s+[\d.]+,\d{2}\s*$/, '').trim();
 
-    // Remove código de estabelecimento numérico no início (ex: "026 ")
-    descricao = descricao.replace(/^\d{3}\s+/, '').trim();
-
     if (descricao.length < 2) continue;
-
-    const categoria = detectarCategoriaPorDescricao(descricao);
 
     resultado.push({
       id: gerarId(),
       data,
       descricao,
       valor,
-      categoria,
+      categoria: detectarCategoriaPorDescricao(descricao),
       parcelas,
       status: 'pendente',
     });
@@ -413,18 +392,23 @@ export default function GestaoCartoes({
     }
   };
 
+  // ── CORREÇÃO: usa mesReferencia como base, não a data original da compra ────
   const handleLancarItem = (linha: LinhaExtrato) => {
     if (!onLancarItensCSV) return;
     setLancandoId(linha.id);
 
-    const dataBase = new Date(linha.data + 'T00:00:00');
+    // mesReferencia vem no formato "YYYY-MM" — usa o 1º dia desse mês
+    const [anoRef, mesRef] = mesReferencia.split('-').map(Number);
+    const dataFatura = new Date(anoRef, mesRef - 1, 1);
+
     const parcelas = linha.parcelas;
     const itens: ItemFatura[] = [];
 
     if (parcelas && parcelas.atual <= parcelas.total) {
+      // Parcela atual vai para o mês da fatura, próximas para meses seguintes
       for (let i = parcelas.atual; i <= parcelas.total; i++) {
-        const dataParcela = new Date(dataBase);
-        dataParcela.setMonth(dataBase.getMonth() + (i - parcelas.atual));
+        const dataParcela = new Date(dataFatura);
+        dataParcela.setMonth(dataFatura.getMonth() + (i - parcelas.atual));
         itens.push({
           id: gerarId(),
           cartaoId: cartaoImportId,
@@ -439,10 +423,11 @@ export default function GestaoCartoes({
         });
       }
     } else {
+      // Sem parcelamento → vai direto para o mês da fatura
       itens.push({
         id: gerarId(),
         cartaoId: cartaoImportId,
-        data: linha.data,
+        data: dataFatura.toISOString().split('T')[0],
         descricao: linha.descricao,
         valor: linha.valor,
         categoria: linha.categoria,
@@ -453,7 +438,9 @@ export default function GestaoCartoes({
     }
 
     onLancarItensCSV(cartaoImportId, itens);
-    setLinhasExtrato(prev => prev.map(l => l.id === linha.id ? { ...l, status: 'conciliado' } : l));
+    setLinhasExtrato(prev =>
+      prev.map(l => l.id === linha.id ? { ...l, status: 'conciliado' } : l)
+    );
     setLancandoId(null);
   };
 
@@ -462,6 +449,7 @@ export default function GestaoCartoes({
     pendentes.forEach(l => handleLancarItem(l));
   };
 
+  // ── Funções existentes ───────────────────────────────────────────────────────
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
     return faturasDoMes.find(f => f.cartaoId === cartaoId) || null;
@@ -705,7 +693,7 @@ export default function GestaoCartoes({
               <div>
                 <h3 style={{ fontSize: '1.125rem', fontWeight: '700', color: '#374151', margin: 0 }}>📂 Importar Extrato PDF</h3>
                 <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: '0.25rem' }}>
-                  Cartão: <strong>{cartoes.find(c => c.id === cartaoImportId)?.nome}</strong>
+                  Cartão: <strong>{cartoes.find(c => c.id === cartaoImportId)?.nome}</strong> · Fatura: <strong>{mesReferencia}</strong>
                 </div>
               </div>
               <button onClick={fecharModalImport} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#6b7280', lineHeight: 1 }}>✕</button>
@@ -742,7 +730,7 @@ export default function GestaoCartoes({
                   )}
 
                   <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '0.5rem', padding: '0.875rem', marginTop: '1rem', fontSize: '0.8rem', color: '#0369a1' }}>
-                    💡 <strong>Como funciona:</strong> o sistema lê o PDF, extrai as transações, detecta parcelas e compara com o que já está lançado. Itens já lançados aparecem como ✅ conciliado, o resto como ⚠️ pendente para você lançar com um clique.
+                    💡 <strong>Como funciona:</strong> todos os itens são lançados na fatura do mês selecionado no dashboard. Parcelas futuras vão automaticamente para os próximos meses.
                   </div>
                 </div>
               )}
