@@ -237,7 +237,12 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
 
     const [, dataDDMM, resto, valorStr] = matchData;
 
-    // Ignora pagamentos e encargos
+    // CORREÇÃO: ignora linhas de texto legal/informativo do PDF
+    // O bloco "Fique Atento" contém "Lei 12.007, de 29/07/2009" que o parser
+    // confundia com uma transação (data=29/07, valor=12, desc="quitações mensais")
+    if (/lei\b|quitaç|declaraç|substituindo|comprovação|obrigaç|consumidor|eventuais|titular/i.test(resto)) continue;
+
+    // Ignora pagamentos e encargos financeiros
     if (/^pagamento|encargos|juros de mora|manutenção de conta|manutencao|multa/i.test(resto.trim())) continue;
 
     const valor = converterValor(valorStr);
@@ -303,7 +308,7 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
     let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Parcelamento colado na descrição: DESCRICAOPARC02/03 ou DESCRICAO PARC02/03
+    // Parcelamento colado na descrição: DESCRICAOPARC02/03
     // Ex: "HNA*OBOTICARIOPARC06/10" → "HNA*OBOTICARIO" + parc 6/10
     const matchParcColado = descricao.match(/PARC(\d{1,2})\/(\d{1,2})$/i);
     if (matchParcColado) {
@@ -316,6 +321,78 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
     // Remove sufixos comuns: " BR WEL", " BR GYM", " BR "
     descricao = descricao.replace(/\s+BR\s+\w{0,5}\s*$/, '').trim();
     descricao = descricao.replace(/\s+BR\s*$/, '').trim();
+
+    if (descricao.length < 2) continue;
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria: detectarCategoriaPorDescricao(descricao),
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 5 — NUBANK
+// Formato: DD MES DESCRIÇÃO R$ VALOR  (data por extenso: 07 FEV, 22 MAR...)
+// Negativos (pagamentos, créditos) são ignorados pelo sinal "-" antes do R$
+// ═══════════════════════════════════════════════════════════════════════
+function isNubank(texto: string): boolean {
+  return /nubank|nu pagamentos/i.test(texto.slice(0, 2000));
+}
+
+function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
+  const MESES: { [k: string]: string } = {
+    JAN: '01', FEV: '02', MAR: '03', ABR: '04', MAI: '05', JUN: '06',
+    JUL: '07', AGO: '08', SET: '09', OUT: '10', NOV: '11', DEZ: '12',
+  };
+
+  const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
+
+  for (const linha of linhas) {
+    // Formato: "07 FEV Descrição R$ 30,18" ou "07 FEV Descrição −R$ 531,78"
+    const m = linha.match(/^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+(-?)R\$\s*([\d.,]+)\s*$/i);
+    if (!m) continue;
+
+    const [, dia, mesStr, descRaw, sinal, valorStr] = m;
+
+    // Ignora negativos (pagamentos, créditos)
+    if (sinal === '-') continue;
+
+    // Ignora linhas de controle
+    if (/^pagamento|crédito de parcel|saldo restante|total a pagar|parcelamento de compra "/i.test(descRaw.trim())) continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const mesNum = parseInt(MESES[mesStr.toUpperCase()]);
+    const anoNum = mesNum > mesRefNum ? anoRefNum - 1 : anoRefNum;
+    const data = `${anoNum}-${String(mesNum).padStart(2, '0')}-${dia}`;
+
+    let descricao = descRaw.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    // Extrai parcelamento: "- Parcela 3/10" ou "- Parcela 1/4"
+    const matchParc = descricao.match(/[-–]\s*Parcela\s+(\d{1,2})\/(\d{1,2})/i);
+    if (matchParc) {
+      const atual = parseInt(matchParc[1]);
+      const total = parseInt(matchParc[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
+      descricao = descricao.replace(/\s*[-–]\s*Parcela\s+\d{1,2}\/\d{1,2}/i, '').trim();
+    }
+
+    // Remove prefixo "Parcelamento de Compra" que o Nubank adiciona em parcelamentos
+    descricao = descricao.replace(/^Parcelamento de Compra\s+/i, '').trim();
+
+    // Remove aspas que o Nubank coloca ao redor do nome da loja
+    descricao = descricao.replace(/^[""](.+?)[""]$/, '$1').trim();
 
     if (descricao.length < 2) continue;
 
@@ -410,6 +487,11 @@ function parsearTextoFatura(texto: string, mesReferencia: string): LinhaExtrato[
 
   if (isPicPay(texto)) {
     const resultado = parsearPicPay(texto, mesRefNum, anoRefNum);
+    if (resultado.length > 0) return resultado;
+  }
+
+  if (isNubank(texto)) {
+    const resultado = parsearNubank(texto, mesRefNum, anoRefNum);
     if (resultado.length > 0) return resultado;
   }
 
@@ -921,7 +1003,7 @@ export default function GestaoCartoes({
                       {processando ? 'Processando...' : 'Clique para selecionar o PDF'}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                      Fatura do cartão em PDF — Riachuelo, Bradescard/Tumelero, Bourbon/Zaffari, PicPay e outros
+                      Fatura do cartão em PDF — Riachuelo, Bradescard/Tumelero, Bourbon/Zaffari, PicPay, Nubank e outros
                     </div>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleArquivoSelecionado} style={{ display: 'none' }} />
