@@ -34,22 +34,24 @@ interface LinhaExtrato {
 // ─── Parser de categorias ────────────────────────────────────────────────────
 function detectarCategoriaPorDescricao(desc: string): string {
   const d = desc.toLowerCase();
-  if (/gasolina|combustivel|posto|etanol|shell|ipiranga|br ?(dist)?/.test(d)) return 'Transporte';
+  if (/gasolina|combustivel|posto|etanol|shell|ipiranga|br ?(dist)?|castelinho|carrefour canoas/.test(d)) return 'Transporte';
   if (/uber|99(app)?|taxi|onibus|metro|passagem|bilhete/.test(d)) return 'Transporte';
-  if (/mercado|carrefour|extra|atacadao|assai|atakarejo|supermercado|feira|hortifruti/.test(d)) return 'Alimentação';
-  if (/ifood|rappi|delivery|pizza|hamburguer|mcdonalds|burger|subway|lanche|restaurante|padaria|cafe/.test(d)) return 'Alimentação';
-  if (/farmacia|drogaria|remedio|ultrafarma|drogaraia|pacheco/.test(d)) return 'Saúde';
-  if (/hospital|clinica|medico|consulta|dentista|laboratorio|exame|plano saude/.test(d)) return 'Saúde';
-  if (/netflix|spotify|disney|hbo|globoplay|paramount|deezer|apple/.test(d)) return 'Lazer';
-  if (/shopping|lojas|magazine|americanas|casas bahia|renner|riachuelo|c&a|hm/.test(d)) return 'Vestuário';
-  if (/amazon|shopee|mercado ?livre|aliexpress|submarino|kabum/.test(d)) return 'Compras Online';
+  if (/mercado|carrefour|extra|atacadao|assai|atakarejo|supermercado|feira|hortifruti|atacadao/.test(d)) return 'Alimentação';
+  if (/zaffari|bourbon/.test(d)) return 'Alimentação';
+  if (/ifood|rappi|delivery|pizza|hamburguer|mcdonalds|burger|subway|lanche|restaurante|padaria|cafe|outback/.test(d)) return 'Alimentação';
+  if (/farmacia|drogaria|remedio|ultrafarma|drogaraia|pacheco|panvel|sao joao/.test(d)) return 'Saúde';
+  if (/hospital|clinica|medico|consulta|dentista|laboratorio|exame|plano saude|amorsaude/.test(d)) return 'Saúde';
+  if (/academia|smartfit|bodytech|bluefit|fitness|gympass|wellhub/.test(d)) return 'Saúde';
+  if (/netflix|spotify|disney|hbo|globoplay|paramount|deezer|apple|claude\.ai/.test(d)) return 'Lazer';
+  if (/shopping|lojas|magazine|americanas|casas bahia|renner|riachuelo|c&a|hm|shein|loja/.test(d)) return 'Vestuário';
+  if (/amazon|shopee|mercado ?livre|aliexpress|submarino|kabum|pontofriocom/.test(d)) return 'Compras Online';
   if (/escola|faculdade|universidade|curso|mensalidade|colegio/.test(d)) return 'Educação';
   if (/aluguel|condominio|iptu|agua|luz|energia|gas|internet|telefone|claro|vivo|tim|oi/.test(d)) return 'Moradia';
-  if (/academia|smartfit|bodytech|bluefit|fitness/.test(d)) return 'Saúde';
-  if (/pet|veterinario|racao|cobasi|petz/.test(d)) return 'Outras Despesas';
+  if (/pet|veterinario|racao|cobasi|petz|agropet|agropecuaria|petlove/.test(d)) return 'Outras Despesas';
   if (/airbnb|hotel|pousada/.test(d)) return 'Lazer';
-  if (/picpay/.test(d)) return 'Outras Despesas';
-  if (/anuidade/.test(d)) return 'Serviços';
+  if (/anuidade|manutencao de conta|manutenção de conta/.test(d)) return 'Serviços';
+  if (/centro automotivo|oficina|mecanico/.test(d)) return 'Manutenção Veículo';
+  if (/oboticario|boticario|natura|avon|suzana cachos|vidaecor|life in/.test(d)) return 'Outras Despesas';
   return 'Outras Despesas';
 }
 
@@ -74,6 +76,16 @@ function converterData(str: string): string {
   return `${ano}-${mes}-${dia}`;
 }
 
+// ─── Infere ano para datas DD/MM sem ano (Bradescard, Bourbon, PicPay) ───────
+// Se o mês da linha for maior que o mês de referência, assume ano anterior
+function inferirAno(dataDDMM: string, mesRefNum: number, anoRefNum: number): string {
+  const partes = dataDDMM.split('/');
+  const dia = partes[0];
+  const mes = parseInt(partes[1]);
+  const ano = mes > mesRefNum ? anoRefNum - 1 : anoRefNum;
+  return `${ano}-${String(mes).padStart(2, '0')}-${dia}`;
+}
+
 // ─── Detecção de parcelamento ─────────────────────────────────────────────────
 function detectarParcelamento(desc: string): { atual: number; total: number } | undefined {
   const match =
@@ -89,12 +101,14 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
   return undefined;
 }
 
-// ─── Detecta se o PDF é da Riachuelo/Midway ──────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 1 — RIACHUELO / MIDWAY
+// Formato: DD/MM/YY COD DESCRIÇÃO [VALOR_ORIGINAL] [PARC/TOTAL] + VALOR
+// ═══════════════════════════════════════════════════════════════════════
 function isRiachuelo(texto: string): boolean {
   return /midway|riachuelo/i.test(texto.slice(0, 2000));
 }
 
-// ─── Parser específico Riachuelo/Midway ──────────────────────────────────────
 function parsearRiachuelo(texto: string): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
   const linhas = texto.split('\n');
@@ -103,7 +117,7 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
     const matchLinha = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+?)\s+([+-])\s+([\d.,]+)\s*$/);
     if (!matchLinha) continue;
 
-    const [, dataStr, codigo, meio, sinal, valorStr] = matchLinha;
+    const [, dataStr, , meio, sinal, valorStr] = matchLinha;
 
     // Ignora pagamentos (sinal -)
     if (sinal === '-') continue;
@@ -128,6 +142,180 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
 
     // Remove valor original: ex "2.999,00"
     descricao = descricao.replace(/\s+[\d.]+,\d{2}\s*$/, '').trim();
+
+    if (descricao.length < 2) continue;
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria: detectarCategoriaPorDescricao(descricao),
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 2 — BRADESCARD / TUMELERO
+// Formato: DD/MM DESCRIÇÃO [(PARC/TOTAL)] VALOR
+//          Pagamentos terminam com " -" ou contêm "PAGAMENTO RECEBIDO"
+// ═══════════════════════════════════════════════════════════════════════
+function isBradescard(texto: string): boolean {
+  return /bradescard|tumelero/i.test(texto.slice(0, 2000));
+}
+
+function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
+  const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
+
+  for (const linha of linhas) {
+    // Formato: DD/MM DESCRIÇÃO VALOR ou DD/MM DESCRIÇÃO VALOR -
+    const matchLinha = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*(-?)$/);
+    if (!matchLinha) continue;
+
+    const [, dataDDMM, descRaw, valorStr, sinal] = matchLinha;
+
+    // Ignora pagamentos e encargos
+    if (sinal === '-') continue;
+    if (/pagamento recebido|pagamento/i.test(descRaw)) continue;
+    if (/encargos|juros|multa|mora|manutenção|manutencao|tarifa/i.test(descRaw)) continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
+    let descricao = descRaw.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    // Extrai parcelamento de dentro de parênteses: (06/06), (02/05) etc.
+    const matchParcParen = descricao.match(/\((\d{1,2})\/(\d{1,2})\)/);
+    if (matchParcParen) {
+      const atual = parseInt(matchParcParen[1]);
+      const total = parseInt(matchParcParen[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
+      descricao = descricao.replace(matchParcParen[0], '').trim();
+    }
+
+    // Remove " BR" do final (sufixo do Bradescard para compras à vista)
+    descricao = descricao.replace(/\s+BR\s*$/, '').trim();
+    if (descricao.length < 2) continue;
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria: detectarCategoriaPorDescricao(descricao),
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 3 — BOURBON / ZAFFARI (Banrisul)
+// Formato: DD/MM ESTABELECIMENTO Parcela de Compra – parc. X/Y VALOR
+//          DD/MM ESTABELECIMENTO Compra à Vista VALOR
+// ═══════════════════════════════════════════════════════════════════════
+function isBourbonZaffari(texto: string): boolean {
+  return /bourbon|zaffari|banrisul/i.test(texto.slice(0, 2000));
+}
+
+function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
+  const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
+
+  for (const linha of linhas) {
+    const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
+    if (!matchData) continue;
+
+    const [, dataDDMM, resto, valorStr] = matchData;
+
+    // Ignora pagamentos e encargos
+    if (/^pagamento|encargos|juros de mora|manutenção de conta|manutencao|multa/i.test(resto.trim())) continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
+    let descricao = resto.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    // Extrai parcelamento: "parc. 6/6" ou "parc. 1/4"
+    const matchParc = descricao.match(/[–\-]\s*parc\.\s*(\d{1,2})\/(\d{1,2})/i);
+    if (matchParc) {
+      const atual = parseInt(matchParc[1]);
+      const total = parseInt(matchParc[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
+      descricao = descricao.replace(/\s*Parcela de Compra\s*[–\-]\s*parc\.\s*\d{1,2}\/\d{1,2}/i, '').trim();
+    }
+
+    // Remove "Compra à Vista"
+    descricao = descricao.replace(/\s*Compra à Vista\s*/i, '').trim();
+    if (descricao.length < 2) continue;
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria: detectarCategoriaPorDescricao(descricao),
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 4 — PICPAY
+// Formato: DD/MM ESTABELECIMENTOPARCXX/YY VALOR  (parcelamento colado)
+//          DD/MM ESTABELECIMENTO BR SUFIXO VALOR  (à vista)
+// ═══════════════════════════════════════════════════════════════════════
+function isPicPay(texto: string): boolean {
+  return /picpay/i.test(texto.slice(0, 2000));
+}
+
+function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
+  const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
+
+  for (const linha of linhas) {
+    const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
+    if (!matchData) continue;
+
+    const [, dataDDMM, descRaw, valorStr] = matchData;
+
+    // Ignora pagamentos, IOF, financiamento, subtotais
+    if (/pagamento de fatura|pagamento|iof diario|iof adicional|^fin |subtotal|total geral/i.test(descRaw.trim())) continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
+    let descricao = descRaw.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    // Parcelamento colado na descrição: DESCRICAOPARC02/03 ou DESCRICAO PARC02/03
+    // Ex: "HNA*OBOTICARIOPARC06/10" → "HNA*OBOTICARIO" + parc 6/10
+    const matchParcColado = descricao.match(/PARC(\d{1,2})\/(\d{1,2})$/i);
+    if (matchParcColado) {
+      const atual = parseInt(matchParcColado[1]);
+      const total = parseInt(matchParcColado[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
+      descricao = descricao.replace(/PARC\d{1,2}\/\d{1,2}$/i, '').trim();
+    }
+
+    // Remove sufixos comuns: " BR WEL", " BR GYM", " BR "
+    descricao = descricao.replace(/\s+BR\s+\w{0,5}\s*$/, '').trim();
+    descricao = descricao.replace(/\s+BR\s*$/, '').trim();
 
     if (descricao.length < 2) continue;
 
@@ -199,11 +387,32 @@ function parsearGenerico(texto: string): LinhaExtrato[] {
 }
 
 // ─── Roteador de parser ───────────────────────────────────────────────────────
-function parsearTextoFatura(texto: string): LinhaExtrato[] {
+// Recebe mesReferencia para inferir o ano em faturas com data DD/MM sem ano
+function parsearTextoFatura(texto: string, mesReferencia: string): LinhaExtrato[] {
+  const [anoRefStr, mesRefStr] = mesReferencia.split('-');
+  const mesRefNum = parseInt(mesRefStr);
+  const anoRefNum = parseInt(anoRefStr);
+
   if (isRiachuelo(texto)) {
     const resultado = parsearRiachuelo(texto);
     if (resultado.length > 0) return resultado;
   }
+
+  if (isBradescard(texto)) {
+    const resultado = parsearBradescard(texto, mesRefNum, anoRefNum);
+    if (resultado.length > 0) return resultado;
+  }
+
+  if (isBourbonZaffari(texto)) {
+    const resultado = parsearBourbonZaffari(texto, mesRefNum, anoRefNum);
+    if (resultado.length > 0) return resultado;
+  }
+
+  if (isPicPay(texto)) {
+    const resultado = parsearPicPay(texto, mesRefNum, anoRefNum);
+    if (resultado.length > 0) return resultado;
+  }
+
   return parsearGenerico(texto);
 }
 
@@ -373,7 +582,8 @@ export default function GestaoCartoes({
         return;
       }
 
-      const linhasParsadas = parsearTextoFatura(textoCompleto);
+      // Passa mesReferencia para o roteador poder inferir o ano
+      const linhasParsadas = parsearTextoFatura(textoCompleto, mesReferencia);
 
       if (linhasParsadas.length === 0) {
         setErroImport('Nenhuma transação encontrada. Verifique se é uma fatura de cartão com data e valor.');
@@ -711,7 +921,7 @@ export default function GestaoCartoes({
                       {processando ? 'Processando...' : 'Clique para selecionar o PDF'}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                      Fatura do cartão em PDF — Nubank, Inter, Itaú, Riachuelo, PicPay, Caixa e outros
+                      Fatura do cartão em PDF — Riachuelo, Bradescard/Tumelero, Bourbon/Zaffari, PicPay e outros
                     </div>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleArquivoSelecionado} style={{ display: 'none' }} />
