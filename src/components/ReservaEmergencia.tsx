@@ -186,14 +186,14 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
   const [cdiInput, setCdiInput] = useState(String(reserva.taxaCDIAnual || 14.9));
   const creditouRef = useRef(false); // evita crédito duplo na mesma sessão
 
-  const transacoes = useMemo(() => reserva.transacoes || [], [reserva.transacoes]);
+  const transacoesReserva = reserva.transacoes || [];
   const taxaCDI = reserva.taxaCDIAnual || 14.9;
   const meta = reserva.meta || 0;
 
   // ── Crédito automático de CDI ao abrir o app ──────────────────────────────
   useEffect(() => {
     if (creditouRef.current) return; // já rodou nesta sessão
-    if (transacoes.length === 0) return; // sem depósitos
+    if (transacoesReserva.length === 0) return; // sem depósitos
 
     const hoje = new Date().toISOString().split('T')[0];
     const ultimoCredito = reserva.ultimoCreditoCDI;
@@ -201,13 +201,13 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
     // Só credita se nunca creditou antes ou se já passou 1 dia
     if (ultimoCredito && ultimoCredito >= hoje) return;
 
-    const dataInicio = ultimoCredito || transacoes
+    const dataInicio = ultimoCredito || transacoesReserva
       .filter(t => t.tipo === 'deposito')
       .sort((a, b) => a.data.localeCompare(b.data))[0]?.data;
 
     if (!dataInicio || dataInicio >= hoje) return;
 
-    const rendimento = calcularRendimentoPeriodo(transacoes, taxaCDI, dataInicio, hoje);
+    const rendimento = calcularRendimentoPeriodo(transacoesReserva, taxaCDI, dataInicio, hoje);
     if (!rendimento) return;
 
     creditouRef.current = true;
@@ -222,13 +222,13 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
 
     onSalvar({
       ...reserva,
-      transacoes: [...transacoes, novaTransacao],
+      transacoes: [...transacoesReserva, novaTransacao],
       ultimoCreditoCDI: hoje,
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // roda apenas uma vez ao montar
 
-  const saldo = useMemo(() => calcularSaldo(transacoes, taxaCDI), [transacoes, taxaCDI]);
+  const saldo = useMemo(() => calcularSaldo(transacoesReserva, taxaCDI), [transacoesReserva, taxaCDI]);
 
   const valorRetirada = parseFloat(valorInput.replace(',', '.')) || 0;
   const simulacaoImpostos = tipoMovimento === 'retirada' && valorRetirada > 0
@@ -262,7 +262,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
         diasCorridos: simulacaoImpostos.diasCorridos,
       } : {}),
     };
-    onSalvar({ ...reserva, transacoes: [...transacoes, novaTransacao] });
+    onSalvar({ ...reserva, transacoes: [...transacoesReserva, novaTransacao] });
     setValorInput('');
     setDescricaoInput('');
     setModalAberto(false);
@@ -282,7 +282,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
 
   const handleExcluirTransacao = (id: string) => {
     if (!confirm('Remover este lançamento?')) return;
-    onSalvar({ ...reserva, transacoes: transacoes.filter(t => t.id !== id) });
+    onSalvar({ ...reserva, transacoes: transacoesReserva.filter(t => t.id !== id) });
   };
 
   return (
@@ -410,11 +410,11 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
               </button>
             </div>
 
-            {transacoes.length > 0 ? (
+            {transacoesReserva.length > 0 ? (
               <div>
                 <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#6b7280', textTransform: 'uppercase', marginBottom: '0.75rem' }}>Histórico</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  {[...transacoes].reverse().slice(0, 15).map(t => (
+                  {[...transacoesReserva].reverse().slice(0, 15).map(t => (
                     <div key={t.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.625rem 0.75rem', background: t.tipo === 'deposito' ? '#f0fdf4' : '#fef2f2', borderRadius: '0.5rem' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: 1, minWidth: 0 }}>
                         <span>{t.tipo === 'deposito' ? (t.descricao.includes('Rendimento') ? '📈' : '⬆️') : '⬇️'}</span>

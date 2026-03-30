@@ -252,7 +252,7 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
 
             <select
               value={ordenacao}
-              onChange={(e) => setOrdenacao(e.target.value as 'nome' | 'valor' | 'percentual')}
+              onChange={(e) => setOrdenacao(e.target.value as any)}
               style={{
                 padding: '0.5rem 0.75rem',
                 border: '1px solid #e5e7eb',
@@ -509,7 +509,7 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
       />
 
       <ModalGerenciarCategorias
-        key={modalGerenciarAberto ? 'gerenciar' : 'fechado'}
+        key={modalGerenciarAberto ? 'aberto' : 'fechado'}
         aberto={modalGerenciarAberto}
         categorias={categoriasCustomizadas}
         onFechar={() => setModalGerenciarAberto(false)}

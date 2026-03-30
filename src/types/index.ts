@@ -16,6 +16,12 @@ export interface Transacao {
   cartaoId?: string;
   metodoPagamento?: 'dinheiro' | 'cartao' | 'vale_alimentacao';
   quilometragem?: number; // KM registrado no momento do abastecimento/manutenção
+  parcelamento?: {
+    parcelaAtual: number;
+    totalParcelas: number;
+  };
+  dividido?: boolean;
+  notaFiscalUrl?: string;
 }
 
 export interface CartaoCredito {

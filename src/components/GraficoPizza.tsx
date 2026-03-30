@@ -60,29 +60,24 @@ export default function GraficoPizza({ categorias }: Props) {
     );
   }
 
-  const fatias = top5.reduce((acc, cat, index) => {
+  const fatias = [];
+  let acumulado = 0;
+  for (let index = 0; index < top5.length; index++) {
+    const cat = top5[index];
     const valorSeguro = cat.total || 0;
     const percentual = (valorSeguro / total) * 100;
-    const inicio = acc.length > 0 ? acc[acc.length - 1].fim : 0;
-    const fim = inicio + percentual;
-    
-    acc.push({
+    const inicio = acumulado;
+    acumulado += percentual;
+
+    fatias.push({
       categoria: cat.nome,
       valor: valorSeguro,
       percentual: percentual,
       inicio: inicio,
-      fim: fim,
+      fim: acumulado,
       cor: CORES[index % CORES.length]
     });
-    return acc;
-  }, [] as {
-    categoria: string;
-    valor: number;
-    percentual: number;
-    inicio: number;
-    fim: number;
-    cor: string;
-  }[]);
+  }
 
   const criarPath = (inicio: number, fim: number) => {
     const anguloInicio = (inicio / 100) * 360 - 90;

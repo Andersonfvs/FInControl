@@ -56,7 +56,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
           type="text"
           value={texto}
           onChange={e => setTexto(e.target.value)}
-          placeholder="Ex: &quot;50 gasolina 45000km&quot;, &quot;80 mercado credito nubank&quot;, &quot;200 shopee receita&quot;"
+          placeholder='Ex: "50 gasolina 45000km", "80 mercado credito nubank", "200 shopee receita"'
           disabled={processando}
           style={{
             flex: 1,
@@ -99,7 +99,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
       )}
 
       <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '0.5rem' }}>
-        💡 <strong>Débito:</strong> &quot;50 gasolina&quot; • <strong>Crédito:</strong> &quot;80 mercado credito nubank&quot; • <strong>Receita:</strong> &quot;200 shopee receita&quot; • <strong>KM:</strong> &quot;150 gasolina 45000km&quot;
+        💡 <strong>Débito:</strong> "50 gasolina" • <strong>Crédito:</strong> "80 mercado credito nubank" • <strong>Receita:</strong> "200 shopee receita" • <strong>KM:</strong> "150 gasolina 45000km"
       </div>
     </div>
   );

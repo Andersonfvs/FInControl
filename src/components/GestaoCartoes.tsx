@@ -232,15 +232,12 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
+    if (/lei\b|quitaç|declaraç|substituindo|comprovação/i.test(linha)) return resultado;
+
     const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
     if (!matchData) continue;
 
     const [, dataDDMM, resto, valorStr] = matchData;
-
-    // CORREÇÃO: ignora linhas de texto legal/informativo do PDF
-    // O bloco "Fique Atento" contém "Lei 12.007, de 29/07/2009" que o parser
-    // confundia com uma transação (data=29/07, valor=12, desc="quitações mensais")
-    if (/lei\b|quitaç|declaraç|substituindo|comprovação|obrigaç|consumidor|eventuais|titular/i.test(resto)) continue;
 
     // Ignora pagamentos e encargos financeiros
     if (/^pagamento|encargos|juros de mora|manutenção de conta|manutencao|multa/i.test(resto.trim())) continue;
@@ -357,17 +354,14 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    // Formato: "07 FEV Descrição R$ 30,18" ou "07 FEV Descrição −R$ 531,78"
-    const m = linha.match(/^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+(-?)R\$\s*([\d.,]+)\s*$/i);
+    const regex = /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s*(?:[-–•]\s*)?R\$\s*([\d.,]+)/i;
+    const m = linha.match(regex);
     if (!m) continue;
 
-    const [, dia, mesStr, descRaw, sinal, valorStr] = m;
+    const [, dia, mesStr, descRaw, valorStr] = m;
 
-    // Ignora negativos (pagamentos, créditos)
-    if (sinal === '-') continue;
-
-    // Ignora linhas de controle
-    if (/^pagamento|crédito de parcel|saldo restante|total a pagar|parcelamento de compra "/i.test(descRaw.trim())) continue;
+    // Ignora pagamentos e créditos
+    if (/pagamento|recebido|crédito|estorno|saldo restante|total a pagar/i.test(descRaw)) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -388,11 +382,10 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
       descricao = descricao.replace(/\s*[-–]\s*Parcela\s+\d{1,2}\/\d{1,2}/i, '').trim();
     }
 
-    // Remove prefixo "Parcelamento de Compra" que o Nubank adiciona em parcelamentos
+    // Limpeza da descrição
     descricao = descricao.replace(/^Parcelamento de Compra\s+/i, '').trim();
-
-    // Remove aspas que o Nubank coloca ao redor do nome da loja
     descricao = descricao.replace(/^[""](.+?)[""]$/, '$1').trim();
+    descricao = descricao.replace(/\s*[-–•]\s*$/, '').trim();
 
     if (descricao.length < 2) continue;
 
@@ -585,8 +578,11 @@ export default function GestaoCartoes({
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
     script.onload = () => {
-      (window as unknown as { pdfjsLib: { GlobalWorkerOptions: { workerSrc: string } } }).pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const win = window as unknown as { pdfjsLib?: { GlobalWorkerOptions: { workerSrc: string } } };
+      if (win.pdfjsLib) {
+        win.pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
       pdfJsCarregado.current = true;
     };
     document.head.appendChild(script);
@@ -628,7 +624,8 @@ export default function GestaoCartoes({
     setLinhasExtrato([]);
 
     try {
-      const pdfjsLib = (window as unknown as { pdfjsLib: { getDocument: (args: { data: ArrayBuffer }) => { promise: Promise<{ numPages: number; getPage: (p: number) => Promise<{ getTextContent: () => Promise<{ items: { str: string; transform: number[] }[] }> }> }> } } }).pdfjsLib;
+      const win = window as unknown as { pdfjsLib?: { getDocument: (args: unknown) => { promise: Promise<unknown> } } };
+      const pdfjsLib = win.pdfjsLib;
       if (!pdfjsLib) {
         setErroImport('PDF.js não carregou ainda. Aguarde um segundo e tente novamente.');
         setProcessando(false);
@@ -636,11 +633,11 @@ export default function GestaoCartoes({
       }
 
       const arrayBuffer = await arquivo.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      const pdf = (await pdfjsLib.getDocument({ data: arrayBuffer }).promise) as { numPages: number; getPage: (p: number) => Promise<unknown> };
       let textoCompleto = '';
 
       for (let p = 1; p <= pdf.numPages; p++) {
-        const pagina = await pdf.getPage(p);
+        const pagina = (await pdf.getPage(p)) as { getTextContent: () => Promise<{ items: { str: string; transform: number[] }[] }> };
         const conteudo = await pagina.getTextContent();
         // Preserva quebras de linha por item para o parser Riachuelo funcionar
         const itens = conteudo.items as { str: string; transform: number[] }[];
@@ -684,7 +681,6 @@ export default function GestaoCartoes({
     }
   };
 
-  // ── CORREÇÃO: usa mesReferencia como base, não a data original da compra ────
   const handleLancarItem = (linha: LinhaExtrato) => {
     if (!onLancarItensCSV) return;
     setLancandoId(linha.id);
@@ -744,7 +740,7 @@ export default function GestaoCartoes({
   // ── Funções existentes ───────────────────────────────────────────────────────
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
-    return faturasDoMes.find(f => f.cartaoId === cartaoId) || null;
+    return faturasDoMes.find((f: FaturaMensal) => f.cartaoId === cartaoId) || null;
   };
 
   const handleExcluirCartao = (cartaoId: string) => {

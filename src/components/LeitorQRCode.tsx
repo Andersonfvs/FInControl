@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import type { Html5Qrcode } from 'html5-qrcode';
 
 interface Props {
   aberto: boolean;
@@ -44,8 +45,22 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
   const [status, setStatus] = useState<'idle' | 'lendo' | 'sucesso' | 'erro'>('idle');
   const [mensagemErro, setMensagemErro] = useState('');
   const [urlLida, setUrlLida] = useState('');
-  const scannerRef = useRef<import('html5-qrcode').Html5Qrcode | null>(null);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
   const elementId = 'qr-reader-fincontrol';
+
+  const processarLeitura = useCallback((decodedText: string) => {
+    setUrlLida(decodedText);
+    setStatus('sucesso');
+
+    const valor = extrairValorNFCe(decodedText);
+    const isNFCe = decodedText.includes('nfce') || decodedText.includes('nfe') || decodedText.includes('fazenda') || decodedText.includes('sefaz');
+
+    onLeitura({
+      url: decodedText,
+      valor,
+      descricao: isNFCe ? '📄 Nota Fiscal' : decodedText.slice(0, 60)
+    });
+  }, [onLeitura]);
 
   useEffect(() => {
     if (!aberto) return;
@@ -54,8 +69,8 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
     setUrlLida('');
 
     // Import dinâmico para evitar SSR
-    import('html5-qrcode').then(({ Html5Qrcode }) => {
-      const scanner = new Html5Qrcode(elementId);
+    import('html5-qrcode').then(({ Html5Qrcode: Html5QrcodeClass }) => {
+      const scanner = new Html5QrcodeClass(elementId);
       scannerRef.current = scanner;
 
       scanner.start(
@@ -64,23 +79,13 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
         (decodedText: string) => {
           // Leitura bem-sucedida
           scanner.stop().catch(() => {});
-          setUrlLida(decodedText);
-          setStatus('sucesso');
-
-          const valor = extrairValorNFCe(decodedText);
-          const isNFCe = decodedText.includes('nfce') || decodedText.includes('nfe') || decodedText.includes('fazenda') || decodedText.includes('sefaz');
-
-          onLeitura({
-            url: decodedText,
-            valor,
-            descricao: isNFCe ? '📄 Nota Fiscal' : decodedText.slice(0, 60)
-          });
+          processarLeitura(decodedText);
         },
         () => { /* frame sem QR, ignora */ }
-      ).catch((err: { message?: string }) => {
+      ).catch((err: Error) => {
         setStatus('erro');
         setMensagemErro(
-          err?.message?.includes('permission') || err?.message?.includes('Permission')
+          err?.message?.toLowerCase().includes('permission')
             ? 'Permissão de câmera negada. Verifique as configurações do navegador.'
             : 'Não foi possível acessar a câmera. Tente novamente.'
         );
@@ -91,16 +96,12 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
     });
 
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-      }
+      scannerRef.current?.stop().catch(() => {});
     };
-  }, [aberto, onLeitura]);
+  }, [aberto, processarLeitura]);
 
   const handleFechar = () => {
-    if (scannerRef.current) {
-      scannerRef.current.stop().catch(() => {});
-    }
+    scannerRef.current?.stop().catch(() => {});
     setStatus('idle');
     onFechar();
   };

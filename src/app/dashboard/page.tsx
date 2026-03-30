@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
-import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada, FaturaMensal, TransacaoReserva, ReservaEmergencia as ReservaEmergenciaType } from '@/types';
+import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada, FaturaMensal } from '@/types';
 import { gerarMesKey, calcularResumo, formatarMoeda, obterNomeMes, gerarId } from '@/utils/financeiro';
 import { DadosInputMagico } from '@/utils/categorias';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -23,7 +23,7 @@ import GestaoCategorias from '@/components/GestaoCategorias';
 import InsightsInteligentes from '@/components/InsightsInteligentes';
 import AlertaFaturas from '@/components/AlertaFaturas';
 import AtalhosRapidos from '@/components/AtalhosRapidos';
-import ReservaEmergenciaComponent from '@/components/ReservaEmergencia';
+import ReservaEmergencia from '@/components/ReservaEmergencia';
 import MelhorCartao from '@/components/MelhorCartao';
 import CustoKm from '@/components/CustoKm';
 
@@ -89,9 +89,9 @@ export default function DashboardPage() {
       let precisaMigrar = false;
       const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
       for (const mesKey in dadosPorMesOriginal) {
-        const lista = Array.isArray(dadosPorMesOriginal[mesKey])
-          ? dadosPorMesOriginal[mesKey] as Transacao[]
-          : Object.values(dadosPorMesOriginal[mesKey] || {}) as Transacao[];
+        const lista: Transacao[] = Array.isArray(dadosPorMesOriginal[mesKey])
+          ? (dadosPorMesOriginal[mesKey] as Transacao[])
+          : Object.values(dadosPorMesOriginal[mesKey] || {} as Record<string, Transacao>);
         dadosPorMesMigrado[mesKey] = lista.map((t: Transacao) => {
           if (!t?.id) { precisaMigrar = true; return { ...t, id: gerarId() }; }
           return t;
@@ -103,13 +103,13 @@ export default function DashboardPage() {
       let precisaMigrarFaturas = false;
       const faturasMigradas: { [mesKey: string]: FaturaMensal[] } = {};
       for (const mesKey in faturasOriginal) {
-        const lista = Array.isArray(faturasOriginal[mesKey])
-          ? faturasOriginal[mesKey] as FaturaMensal[]
-          : Object.values(faturasOriginal[mesKey] || {}) as FaturaMensal[];
+        const lista: FaturaMensal[] = Array.isArray(faturasOriginal[mesKey])
+          ? (faturasOriginal[mesKey] as FaturaMensal[])
+          : Object.values(faturasOriginal[mesKey] || {} as Record<string, FaturaMensal>);
         faturasMigradas[mesKey] = lista.map((f: FaturaMensal) => {
           if (!f) return f;
-          if (!f.itens) { precisaMigrarFaturas = true; return { ...f, itens: [], totalFatura: f.totalFatura || 0 }; }
-          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) as unknown as ItemFatura[] }; }
+          if (!f.itens) { precisaMigrarFaturas = true; return { ...f, itens: [], totalFatura: f.totalFatura || 0 } as FaturaMensal; }
+          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) } as FaturaMensal; }
           return f;
         });
       }
@@ -231,10 +231,11 @@ export default function DashboardPage() {
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
         const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
         if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = novasFaturas[mesKey].map((f: FaturaMensal) => {
+          novasFaturas[mesKey] = (novasFaturas[mesKey] as FaturaMensal[]).map((f: FaturaMensal) => {
             if (f.cartaoId !== transacao.cartaoId) return f;
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { dataPagamento, ...resto } = f;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const _ = dataPagamento;
             return { ...resto, paga: false };
           });
           await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
@@ -330,7 +331,7 @@ export default function DashboardPage() {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find((f: FaturaMensal) => f.cartaoId === cartaoId);
+        const existente = (novasFaturas[mesKey] as FaturaMensal[]).find((f: FaturaMensal) => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens = existente.itens || [];
           existente.itens.push(...itensDoMes);
@@ -384,7 +385,7 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
   };
 
-  const handleSalvarReserva = async (reserva: TransacaoReserva[] | ReservaEmergenciaType) => {
+  const handleSalvarReserva = async (reserva: SistemaFinanceiro['reservaEmergencia']) => {
     if (!usuario) return;
     try {
       await set(ref(database, `usuarios/${usuario.uid}/reservaEmergencia`), reserva);
@@ -395,7 +396,7 @@ export default function DashboardPage() {
     const mesKey = gerarMesKey(dataReferencia);
     const transacoes = sistema.dadosPorMes[mesKey] || [];
     const receitasVale = transacoes.filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação').reduce((acc, t) => acc + t.valor, 0);
-    const despesasVale = transacoes.filter(t => t.tipo === 'despesa' && (t as Transacao).metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
+    const despesasVale = transacoes.filter(t => t.tipo === 'despesa' && t.metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
     return receitasVale - despesasVale;
   };
 
@@ -417,7 +418,7 @@ export default function DashboardPage() {
   dataAnterior.setMonth(dataAnterior.getMonth() - 1);
   const transacoesAnterior = sistema.dadosPorMes[gerarMesKey(dataAnterior)] || [];
   const resumo = calcularResumo(transacoes, filtro);
-  const transacoesFiltradas = filtro === 'todos' ? transacoes : transacoes.filter(t => t.pessoa.toLowerCase() === filtro.toLowerCase());
+  const transacoesFiltradas = filtro === 'todos' ? transacoes : transacoes.filter((t: Transacao) => t.pessoa.toLowerCase() === filtro.toLowerCase());
   const cartaoSelecionado = sistema.cartoes.find(c => c.id === cartaoSelecionadoId);
   const saldoVale = calcularSaldoVale();
   const totalFaturasPendentes = (sistema.faturas[mesKey] || []).filter(f => !f.paga).reduce((s, f) => s + f.totalFatura, 0);
@@ -560,7 +561,7 @@ export default function DashboardPage() {
                 <GraficoEvolucao dados={calcularEvolucao()} />
               </div>
 
-              <ReservaEmergenciaComponent reserva={sistema.reservaEmergencia} onSalvar={handleSalvarReserva} />
+              <ReservaEmergencia reserva={sistema.reservaEmergencia} onSalvar={handleSalvarReserva} />
                 <CustoKm dadosPorMes={sistema.dadosPorMes} />
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
@@ -639,8 +640,8 @@ export default function DashboardPage() {
         usuarioNome={usuario.nome}
         userId={usuario.uid}
         transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null}
-        onSucesso={(msg: string) => showToast(msg, 'sucesso')}
-        onErro={(msg: string) => showToast(msg, 'erro')}
+        onSucesso={msg => showToast(msg, 'sucesso')}
+        onErro={msg => showToast(msg, 'erro')}
         dadosIniciais={dadosIniciais}
       />
       <ModalDespesa
@@ -651,7 +652,7 @@ export default function DashboardPage() {
         descricaoPreenchida={descricaoPreenchida}
       />
       <ModalCadastrarCartao
-        key={modalCartaoAberto ? (cartaoEditando?.id || 'novo') : 'fechado'}
+        key={modalCartaoAberto ? 'aberto' : 'fechado'}
         aberto={modalCartaoAberto}
         onFechar={() => { setModalCartaoAberto(false); setCartaoEditando(null); }}
         onSalvar={handleSalvarCartao}

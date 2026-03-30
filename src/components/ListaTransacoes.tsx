@@ -118,9 +118,7 @@ export default function ListaTransacoes({
             const isCarregando = carregandoId === transacao.id;
             const icone = obterIconeCategoria(transacao.categoria);
             // Campos extras via cast seguro
-            const parcelamento = (transacao as Transacao & { parcelamento?: { parcelaAtual: number; totalParcelas: number } }).parcelamento;
-            const dividido = (transacao as Transacao & { dividido?: boolean }).dividido;
-            const notaFiscalUrl = (transacao as Transacao & { notaFiscalUrl?: string }).notaFiscalUrl;
+            const { parcelamento, dividido, notaFiscalUrl } = transacao;
 
             return (
               <div key={`mob-${transacao.id}-${index}`} style={{
@@ -194,9 +192,7 @@ export default function ListaTransacoes({
             const isReceita = transacao.tipo === 'renda';
             const isCarregando = carregandoId === transacao.id;
             const icone = obterIconeCategoria(transacao.categoria);
-            const parcelamento = (transacao as Transacao & { parcelamento?: { parcelaAtual: number; totalParcelas: number } }).parcelamento;
-            const dividido = (transacao as Transacao & { dividido?: boolean }).dividido;
-            const notaFiscalUrl = (transacao as Transacao & { notaFiscalUrl?: string }).notaFiscalUrl;
+            const { parcelamento, dividido, notaFiscalUrl } = transacao;
 
             return (
               <div
