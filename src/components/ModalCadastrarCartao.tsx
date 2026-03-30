@@ -25,31 +25,12 @@ const CORES = [
 const BANDEIRAS = ['Mastercard', 'Visa', 'Elo', 'American Express', 'Hipercard', 'Outros'];
 
 export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, cartaoEditando }: Props) {
-  const [nome, setNome] = useState('');
-  const [bandeira, setBandeira] = useState('Mastercard');
-  const [limite, setLimite] = useState('');
-  const [diaFechamento, setDiaFechamento] = useState('');
-  const [diaVencimento, setDiaVencimento] = useState('');
-  const [cor, setCor] = useState('#8b5cf6');
-
-  // Preenche campos ao editar
-  useEffect(() => {
-    if (cartaoEditando) {
-      setNome(cartaoEditando.nome);
-      setBandeira(cartaoEditando.bandeira);
-      setLimite(String(cartaoEditando.limite));
-      setDiaFechamento(String(cartaoEditando.diaFechamento));
-      setDiaVencimento(String(cartaoEditando.diaVencimento));
-      setCor(cartaoEditando.cor || '#8b5cf6');
-    } else {
-      setNome('');
-      setBandeira('Mastercard');
-      setLimite('');
-      setDiaFechamento('');
-      setDiaVencimento('');
-      setCor('#8b5cf6');
-    }
-  }, [cartaoEditando, aberto]);
+  const [nome, setNome] = useState(cartaoEditando?.nome || '');
+  const [bandeira, setBandeira] = useState(cartaoEditando?.bandeira || 'Mastercard');
+  const [limite, setLimite] = useState(cartaoEditando ? String(cartaoEditando.limite) : '');
+  const [diaFechamento, setDiaFechamento] = useState(cartaoEditando ? String(cartaoEditando.diaFechamento) : '');
+  const [diaVencimento, setDiaVencimento] = useState(cartaoEditando ? String(cartaoEditando.diaVencimento) : '');
+  const [cor, setCor] = useState(cartaoEditando?.cor || '#8b5cf6');
 
   // ESC fecha o modal
   useEffect(() => {

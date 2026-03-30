@@ -33,13 +33,14 @@ export default function LoginPage() {
     try {
       await signInWithEmailAndPassword(auth, email, senha);
       router.replace('/dashboard');
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const authError = error as { code?: string };
       console.error('Erro no login:', error);
-      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+      if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/wrong-password') {
         setErro('Email ou senha incorretos');
-      } else if (error.code === 'auth/user-not-found') {
+      } else if (authError.code === 'auth/user-not-found') {
         setErro('Usuário não encontrado');
-      } else if (error.code === 'auth/too-many-requests') {
+      } else if (authError.code === 'auth/too-many-requests') {
         setErro('Muitas tentativas. Aguarde alguns minutos.');
       } else {
         setErro('Erro ao fazer login. Tente novamente.');

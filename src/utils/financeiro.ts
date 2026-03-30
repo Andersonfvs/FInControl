@@ -1,4 +1,4 @@
-import { Transacao, ResumoFinanceiro, CategoriaTotal, Resumo } from '@/types';
+import { Transacao, CategoriaTotal, Resumo } from '@/types';
 
 export function gerarMesKey(data: Date): string {
   return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}`;

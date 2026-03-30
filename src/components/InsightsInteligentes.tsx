@@ -1,6 +1,6 @@
 'use client';
 
-import { Transacao, CategoriaTotal } from '@/types';
+import { Transacao } from '@/types';
 import { formatarMoeda } from '@/utils/financeiro';
 import { useIsMobile } from '@/hooks/useIsMobile';
 

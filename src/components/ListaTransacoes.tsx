@@ -97,7 +97,7 @@ export default function ListaTransacoes({
         />
         <select
           value={ordenacao}
-          onChange={e => setOrdenacao(e.target.value as any)}
+          onChange={e => setOrdenacao(e.target.value as 'data' | 'valor' | 'categoria')}
           style={{ padding: '0.625rem 0.75rem', border: '1px solid #e5e7eb', borderRadius: '0.5rem', fontSize: '0.875rem', background: 'white' }}
         >
           <option value="data">📅 Data</option>
@@ -118,9 +118,9 @@ export default function ListaTransacoes({
             const isCarregando = carregandoId === transacao.id;
             const icone = obterIconeCategoria(transacao.categoria);
             // Campos extras via cast seguro
-            const parcelamento = (transacao as any).parcelamento as { parcelaAtual: number; totalParcelas: number } | undefined;
-            const dividido = (transacao as any).dividido as boolean | undefined;
-            const notaFiscalUrl = (transacao as any).notaFiscalUrl as string | undefined;
+            const parcelamento = (transacao as Transacao & { parcelamento?: { parcelaAtual: number; totalParcelas: number } }).parcelamento;
+            const dividido = (transacao as Transacao & { dividido?: boolean }).dividido;
+            const notaFiscalUrl = (transacao as Transacao & { notaFiscalUrl?: string }).notaFiscalUrl;
 
             return (
               <div key={`mob-${transacao.id}-${index}`} style={{
@@ -194,9 +194,9 @@ export default function ListaTransacoes({
             const isReceita = transacao.tipo === 'renda';
             const isCarregando = carregandoId === transacao.id;
             const icone = obterIconeCategoria(transacao.categoria);
-            const parcelamento = (transacao as any).parcelamento as { parcelaAtual: number; totalParcelas: number } | undefined;
-            const dividido = (transacao as any).dividido as boolean | undefined;
-            const notaFiscalUrl = (transacao as any).notaFiscalUrl as string | undefined;
+            const parcelamento = (transacao as Transacao & { parcelamento?: { parcelaAtual: number; totalParcelas: number } }).parcelamento;
+            const dividido = (transacao as Transacao & { dividido?: boolean }).dividido;
+            const notaFiscalUrl = (transacao as Transacao & { notaFiscalUrl?: string }).notaFiscalUrl;
 
             return (
               <div

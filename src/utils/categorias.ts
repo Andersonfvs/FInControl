@@ -1,4 +1,4 @@
-import { CategoriaCustomizada } from '@/types';
+import { CategoriaCustomizada, CartaoCredito } from '@/types';
 
 // ─────────────────────────────────────────────────────────────
 // ÍCONES DE CATEGORIAS
@@ -185,7 +185,7 @@ const CARTOES_CONHECIDOS: { [key: string]: string } = {
   'sicredi': 'Sicredi',
 };
 
-function buscarCartaoPorNome(resto: string, cartoesDisponiveis: any[]): { cartaoId: string; cartaoNome: string; restoAtualizado: string } | null {
+function buscarCartaoPorNome(resto: string, cartoesDisponiveis: CartaoCredito[]): { cartaoId: string; cartaoNome: string; restoAtualizado: string } | null {
   for (const cartao of cartoesDisponiveis) {
     const nomeCartaoLower = cartao.nome.toLowerCase();
     const palavrasCartao = nomeCartaoLower.split(/\s+/);
@@ -207,7 +207,7 @@ function buscarCartaoPorNome(resto: string, cartoesDisponiveis: any[]): { cartao
 export function parsearInputMagico(
   input: string,
   usuarioNome: string,
-  cartoesDisponiveis?: any[],
+  cartoesDisponiveis?: CartaoCredito[],
   categoriasCustomizadas?: CategoriaCustomizada[],
 ): DadosInputMagico | null {
   const texto = input.trim();
@@ -308,7 +308,7 @@ export function parsearInputMagico(
         cartaoNome = nomeCartao;
         resto = resto.replace(palavra, '').trim();
         if (cartoesDisponiveis) {
-          const encontrado = cartoesDisponiveis.find((c: any) =>
+          const encontrado = cartoesDisponiveis.find((c: CartaoCredito) =>
             c.nome.toLowerCase().includes(palavra) ||
             nomeCartao.toLowerCase().includes(c.nome.toLowerCase())
           );

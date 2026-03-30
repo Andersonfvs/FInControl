@@ -61,7 +61,7 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
 
     const total = Object.values(categorias).reduce((sum, val) => sum + val, 0);
 
-    let resultado = Object.entries(categorias)
+    const resultado = Object.entries(categorias)
       .map(([nome, valor]) => ({
         nome,
         total: valor,
@@ -252,7 +252,7 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
 
             <select
               value={ordenacao}
-              onChange={(e) => setOrdenacao(e.target.value as any)}
+              onChange={(e) => setOrdenacao(e.target.value as 'nome' | 'valor' | 'percentual')}
               style={{
                 padding: '0.5rem 0.75rem',
                 border: '1px solid #e5e7eb',
@@ -509,6 +509,7 @@ export default function GestaoCategorias({ transacoes, mesReferencia, faturas, c
       />
 
       <ModalGerenciarCategorias
+        key={modalGerenciarAberto ? 'gerenciar' : 'fechado'}
         aberto={modalGerenciarAberto}
         categorias={categoriasCustomizadas}
         onFechar={() => setModalGerenciarAberto(false)}
