@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { CartaoCredito, ItemFatura, FaturaMensal, Transacao } from '@/types';
-import { formatarMoeda, gerarId, gerarMesKey } from '@/utils/financeiro';
+import { formatarMoeda, gerarId } from '@/utils/financeiro';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Props {
@@ -585,7 +585,7 @@ export default function GestaoCartoes({
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
     script.onload = () => {
-      (window as any).pdfjsLib.GlobalWorkerOptions.workerSrc =
+      (window as unknown as { pdfjsLib: { GlobalWorkerOptions: { workerSrc: string } } }).pdfjsLib.GlobalWorkerOptions.workerSrc =
         'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       pdfJsCarregado.current = true;
     };
@@ -628,7 +628,7 @@ export default function GestaoCartoes({
     setLinhasExtrato([]);
 
     try {
-      const pdfjsLib = (window as any).pdfjsLib;
+      const pdfjsLib = (window as unknown as { pdfjsLib: { getDocument: (args: { data: ArrayBuffer }) => { promise: Promise<{ numPages: number; getPage: (p: number) => Promise<{ getTextContent: () => Promise<{ items: { str: string; transform: number[] }[] }> }> }> } } }).pdfjsLib;
       if (!pdfjsLib) {
         setErroImport('PDF.js não carregou ainda. Aguarde um segundo e tente novamente.');
         setProcessando(false);
@@ -643,7 +643,7 @@ export default function GestaoCartoes({
         const pagina = await pdf.getPage(p);
         const conteudo = await pagina.getTextContent();
         // Preserva quebras de linha por item para o parser Riachuelo funcionar
-        const itens = conteudo.items as any[];
+        const itens = conteudo.items as { str: string; transform: number[] }[];
         let linhaPagina = '';
         let yAnterior: number | null = null;
         for (const item of itens) {

@@ -186,7 +186,7 @@ export default function ReservaEmergencia({ reserva, onSalvar }: Props) {
   const [cdiInput, setCdiInput] = useState(String(reserva.taxaCDIAnual || 14.9));
   const creditouRef = useRef(false); // evita crédito duplo na mesma sessão
 
-  const transacoes = reserva.transacoes || [];
+  const transacoes = useMemo(() => reserva.transacoes || [], [reserva.transacoes]);
   const taxaCDI = reserva.taxaCDIAnual || 14.9;
   const meta = reserva.meta || 0;
 

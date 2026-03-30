@@ -1,14 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { CategoriaCustomizada } from '@/types';
-import { parsearInputMagico } from '@/utils/categorias';
+import { CategoriaCustomizada, CartaoCredito } from '@/types';
+import { parsearInputMagico, DadosInputMagico } from '@/utils/categorias';
 
 interface Props {
   usuarioNome: string;
-  cartoes: any[];
+  cartoes: CartaoCredito[];
   categoriasCustomizadas?: CategoriaCustomizada[];
-  onTransacaoCriada: (dados: any) => void;
+  onTransacaoCriada: (dados: DadosInputMagico) => void;
 }
 
 export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizadas, onTransacaoCriada }: Props) {
@@ -56,7 +56,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
           type="text"
           value={texto}
           onChange={e => setTexto(e.target.value)}
-          placeholder='Ex: "50 gasolina 45000km", "80 mercado credito nubank", "200 shopee receita"'
+          placeholder="Ex: &quot;50 gasolina 45000km&quot;, &quot;80 mercado credito nubank&quot;, &quot;200 shopee receita&quot;"
           disabled={processando}
           style={{
             flex: 1,
@@ -99,7 +99,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
       )}
 
       <div style={{ fontSize: '0.75rem', color: '#0369a1', marginTop: '0.5rem' }}>
-        💡 <strong>Débito:</strong> "50 gasolina" • <strong>Crédito:</strong> "80 mercado credito nubank" • <strong>Receita:</strong> "200 shopee receita" • <strong>KM:</strong> "150 gasolina 45000km"
+        💡 <strong>Débito:</strong> &quot;50 gasolina&quot; • <strong>Crédito:</strong> &quot;80 mercado credito nubank&quot; • <strong>Receita:</strong> &quot;200 shopee receita&quot; • <strong>KM:</strong> &quot;150 gasolina 45000km&quot;
       </div>
     </div>
   );

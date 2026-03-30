@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { ref, onValue, set, get } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
-import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada } from '@/types';
+import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada, FaturaMensal, TransacaoReserva, ReservaEmergencia as ReservaEmergenciaType } from '@/types';
 import { gerarMesKey, calcularResumo, formatarMoeda, obterNomeMes, gerarId } from '@/utils/financeiro';
 import { DadosInputMagico } from '@/utils/categorias';
 import { useIsMobile } from '@/hooks/useIsMobile';
@@ -23,7 +23,7 @@ import GestaoCategorias from '@/components/GestaoCategorias';
 import InsightsInteligentes from '@/components/InsightsInteligentes';
 import AlertaFaturas from '@/components/AlertaFaturas';
 import AtalhosRapidos from '@/components/AtalhosRapidos';
-import ReservaEmergencia from '@/components/ReservaEmergencia';
+import ReservaEmergenciaComponent from '@/components/ReservaEmergencia';
 import MelhorCartao from '@/components/MelhorCartao';
 import CustoKm from '@/components/CustoKm';
 
@@ -89,27 +89,27 @@ export default function DashboardPage() {
       let precisaMigrar = false;
       const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
       for (const mesKey in dadosPorMesOriginal) {
-        const lista: any[] = Array.isArray(dadosPorMesOriginal[mesKey])
-          ? dadosPorMesOriginal[mesKey]
-          : Object.values(dadosPorMesOriginal[mesKey] || {});
-        dadosPorMesMigrado[mesKey] = lista.map((t: any) => {
+        const lista = Array.isArray(dadosPorMesOriginal[mesKey])
+          ? dadosPorMesOriginal[mesKey] as Transacao[]
+          : Object.values(dadosPorMesOriginal[mesKey] || {}) as Transacao[];
+        dadosPorMesMigrado[mesKey] = lista.map((t: Transacao) => {
           if (!t?.id) { precisaMigrar = true; return { ...t, id: gerarId() }; }
-          return t as Transacao;
+          return t;
         });
       }
       if (precisaMigrar) set(ref(database, `usuarios/${usuario.uid}/dadosPorMes`), dadosPorMesMigrado).catch(console.error);
 
       const faturasOriginal = dados.faturas || {};
       let precisaMigrarFaturas = false;
-      const faturasMigradas: { [mesKey: string]: any[] } = {};
+      const faturasMigradas: { [mesKey: string]: FaturaMensal[] } = {};
       for (const mesKey in faturasOriginal) {
-        const lista: any[] = Array.isArray(faturasOriginal[mesKey])
-          ? faturasOriginal[mesKey]
-          : Object.values(faturasOriginal[mesKey] || {});
-        faturasMigradas[mesKey] = lista.map((f: any) => {
+        const lista = Array.isArray(faturasOriginal[mesKey])
+          ? faturasOriginal[mesKey] as FaturaMensal[]
+          : Object.values(faturasOriginal[mesKey] || {}) as FaturaMensal[];
+        faturasMigradas[mesKey] = lista.map((f: FaturaMensal) => {
           if (!f) return f;
           if (!f.itens) { precisaMigrarFaturas = true; return { ...f, itens: [], totalFatura: f.totalFatura || 0 }; }
-          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) }; }
+          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) as unknown as ItemFatura[] }; }
           return f;
         });
       }
@@ -231,8 +231,9 @@ export default function DashboardPage() {
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
         const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
         if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = novasFaturas[mesKey].map((f: any) => {
+          novasFaturas[mesKey] = novasFaturas[mesKey].map((f: FaturaMensal) => {
             if (f.cartaoId !== transacao.cartaoId) return f;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
             const { dataPagamento, ...resto } = f;
             return { ...resto, paga: false };
           });
@@ -329,11 +330,11 @@ export default function DashboardPage() {
         if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
         const itensDoMes = porMes[mesKey];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find((f: any) => f.cartaoId === cartaoId);
+        const existente = novasFaturas[mesKey].find((f: FaturaMensal) => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens = existente.itens || [];
           existente.itens.push(...itensDoMes);
-          existente.totalFatura = existente.itens.reduce((s: number, i: any) => s + i.valor, 0);
+          existente.totalFatura = existente.itens.reduce((s: number, i: ItemFatura) => s + i.valor, 0);
         } else {
           novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
         }
@@ -383,7 +384,7 @@ export default function DashboardPage() {
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
   };
 
-  const handleSalvarReserva = async (reserva: any) => {
+  const handleSalvarReserva = async (reserva: TransacaoReserva[] | ReservaEmergenciaType) => {
     if (!usuario) return;
     try {
       await set(ref(database, `usuarios/${usuario.uid}/reservaEmergencia`), reserva);
@@ -394,7 +395,7 @@ export default function DashboardPage() {
     const mesKey = gerarMesKey(dataReferencia);
     const transacoes = sistema.dadosPorMes[mesKey] || [];
     const receitasVale = transacoes.filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação').reduce((acc, t) => acc + t.valor, 0);
-    const despesasVale = transacoes.filter(t => t.tipo === 'despesa' && (t as any).metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
+    const despesasVale = transacoes.filter(t => t.tipo === 'despesa' && (t as Transacao).metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
     return receitasVale - despesasVale;
   };
 
@@ -559,7 +560,7 @@ export default function DashboardPage() {
                 <GraficoEvolucao dados={calcularEvolucao()} />
               </div>
 
-              <ReservaEmergencia reserva={sistema.reservaEmergencia as any} onSalvar={handleSalvarReserva} />
+              <ReservaEmergenciaComponent reserva={sistema.reservaEmergencia} onSalvar={handleSalvarReserva} />
                 <CustoKm dadosPorMes={sistema.dadosPorMes} />
               <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                 <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
@@ -638,8 +639,8 @@ export default function DashboardPage() {
         usuarioNome={usuario.nome}
         userId={usuario.uid}
         transacaoEditando={transacaoEditando?.tipo === 'renda' ? transacaoEditando : null}
-        onSucesso={msg => showToast(msg, 'sucesso')}
-        onErro={msg => showToast(msg, 'erro')}
+        onSucesso={(msg: string) => showToast(msg, 'sucesso')}
+        onErro={(msg: string) => showToast(msg, 'erro')}
         dadosIniciais={dadosIniciais}
       />
       <ModalDespesa
@@ -650,6 +651,7 @@ export default function DashboardPage() {
         descricaoPreenchida={descricaoPreenchida}
       />
       <ModalCadastrarCartao
+        key={modalCartaoAberto ? (cartaoEditando?.id || 'novo') : 'fechado'}
         aberto={modalCartaoAberto}
         onFechar={() => { setModalCartaoAberto(false); setCartaoEditando(null); }}
         onSalvar={handleSalvarCartao}

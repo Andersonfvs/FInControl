@@ -19,11 +19,6 @@ export default function ModalGerenciarCategorias({ aberto, categorias, onFechar,
   const [editandoKeywordsId, setEditandoKeywordsId] = useState<string | null>(null);
   const [novaKeyword, setNovaKeyword] = useState('');
 
-  // Sincroniza lista ao abrir
-  useEffect(() => {
-    if (aberto) setListaLocal(categorias);
-  }, [aberto, categorias]);
-
   // ESC fecha o modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onFechar(); };

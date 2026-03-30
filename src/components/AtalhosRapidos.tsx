@@ -193,7 +193,7 @@ export default function AtalhosRapidos({ onAtalhoClick, userId }: Props) {
           color: '#9ca3af',
           fontSize: '0.8125rem'
         }}>
-          Nenhum atalho ainda. Clique em "+ Novo"!
+          Nenhum atalho ainda. Clique em &quot;+ Novo&quot;!
         </div>
       )}
     </div>
@@ -242,6 +242,7 @@ export default function AtalhosRapidos({ onAtalhoClick, userId }: Props) {
       </div>
 
       <ModalNovoAtalho
+        key={modalAberto ? tipoNovo : 'fechado'}
         aberto={modalAberto}
         onFechar={() => setModalAberto(false)}
         onSalvar={handleAdicionarAtalho}

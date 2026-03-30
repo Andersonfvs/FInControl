@@ -9,7 +9,6 @@ interface Props {
 }
 
 const CATEGORIAS_VEICULO = ['Transporte', 'Manutenção Veículo'];
-const CATEGORIAS_COMBUSTIVEL = ['Transporte'];
 
 interface PontoKm {
   data: string;
@@ -228,7 +227,7 @@ export default function CustoKm({ dadosPorMes }: Props) {
         }}>
           💡 Registre pelo menos <strong>2 abastecimentos com KM</strong> para calcular o custo por quilômetro.
           <br />
-          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>Ex: digite "150 gasolina 45000km" no Adicionar Rápido</span>
+          <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>Ex: digite &quot;150 gasolina 45000km&quot; no Adicionar Rápido</span>
         </div>
       )}
 

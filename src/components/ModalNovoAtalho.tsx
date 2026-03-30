@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface Atalho {
   emoji: string;
@@ -37,25 +37,11 @@ export default function ModalNovoAtalho({ aberto, onFechar, onSalvar, tipoInicia
   const [tipo, setTipo] = useState<'despesa' | 'receita'>(tipoInicial);
   const [emoji, setEmoji] = useState('⚡');
   const [nome, setNome] = useState('');
-  const [categoria, setCategoria] = useState('');
+  const [categoria, setCategoria] = useState(tipoInicial === 'despesa' ? CATEGORIAS_DESPESA[0] : CATEGORIAS_RECEITA[0]);
   const [descricao, setDescricao] = useState('');
   const [mostrarEmojis, setMostrarEmojis] = useState(false);
 
   const categorias = tipo === 'despesa' ? CATEGORIAS_DESPESA : CATEGORIAS_RECEITA;
-
-  useEffect(() => {
-    setTipo(tipoInicial);
-    setCategoria(tipoInicial === 'despesa' ? CATEGORIAS_DESPESA[0] : CATEGORIAS_RECEITA[0]);
-  }, [tipoInicial, aberto]);
-
-  useEffect(() => {
-    if (!aberto) {
-      setEmoji('⚡');
-      setNome('');
-      setDescricao('');
-      setMostrarEmojis(false);
-    }
-  }, [aberto]);
 
   const handleSalvar = () => {
     if (!nome.trim() || !descricao.trim()) return;

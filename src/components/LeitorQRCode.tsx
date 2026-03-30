@@ -44,7 +44,7 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
   const [status, setStatus] = useState<'idle' | 'lendo' | 'sucesso' | 'erro'>('idle');
   const [mensagemErro, setMensagemErro] = useState('');
   const [urlLida, setUrlLida] = useState('');
-  const scannerRef = useRef<any>(null);
+  const scannerRef = useRef<import('html5-qrcode').Html5Qrcode | null>(null);
   const elementId = 'qr-reader-fincontrol';
 
   useEffect(() => {
@@ -77,7 +77,7 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
           });
         },
         () => { /* frame sem QR, ignora */ }
-      ).catch((err: any) => {
+      ).catch((err: { message?: string }) => {
         setStatus('erro');
         setMensagemErro(
           err?.message?.includes('permission') || err?.message?.includes('Permission')
@@ -91,12 +91,16 @@ export default function LeitorQRCode({ aberto, onFechar, onLeitura }: Props) {
     });
 
     return () => {
-      scannerRef.current?.stop().catch(() => {});
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+      }
     };
-  }, [aberto]);
+  }, [aberto, onLeitura]);
 
   const handleFechar = () => {
-    scannerRef.current?.stop().catch(() => {});
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+    }
     setStatus('idle');
     onFechar();
   };
