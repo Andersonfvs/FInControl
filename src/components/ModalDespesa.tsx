@@ -52,6 +52,7 @@ function detectarCategoria(texto: string): string {
 export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenchida, descricaoPreenchida }: Props) {
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
+  const [data, setData] = useState(new Date().toISOString().split('T')[0]); // NOVO: Estado da data
   const [categoria, setCategoria] = useState('Outras Despesas');
   const [responsavel, setResponsavel] = useState('Anderson Ferreira');
   const [parcelado, setParcelado] = useState(false);
@@ -83,6 +84,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
     if (!aberto) {
       setDescricao('');
       setValor('');
+      setData(new Date().toISOString().split('T')[0]);
       setCategoria('Outras Despesas');
       setResponsavel('Anderson Ferreira');
       setParcelado(false);
@@ -92,7 +94,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
     }
   }, [aberto]);
 
-  // CORREÇÃO: ESC fecha o modal
+  // ESC fecha o modal
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onFechar();
@@ -101,7 +103,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
     return () => window.removeEventListener('keydown', handleEsc);
   }, [aberto, onFechar]);
 
-  // CORREÇÃO: trava scroll do body
+  // trava scroll do body
   useEffect(() => {
     if (aberto) {
       document.body.style.overflow = 'hidden';
@@ -122,18 +124,16 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
 
     try {
       const valorNum = parseFloat(valor);
-      const mesAtual = gerarMesKey(new Date());
-      const dataAtual = new Date().toISOString().split('T')[0];
+      // Ajuste de data para evitar problemas de fuso horário (meio-dia)
+      const dataSelecionada = new Date(data + 'T12:00:00');
 
       if (parcelado && numParcelas > 1) {
-        // Despesa parcelada
-        // CORREÇÃO: valorParcela arredondado para 2 casas
         const valorParcela = parseFloat((valorNum / numParcelas).toFixed(2));
-        const dataBase = new Date();
 
         for (let i = 0; i < numParcelas; i++) {
-          const dataParcela = new Date(dataBase);
+          const dataParcela = new Date(dataSelecionada);
           dataParcela.setMonth(dataParcela.getMonth() + i);
+          
           const mesParcela = gerarMesKey(dataParcela);
           const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${mesParcela}`);
           
@@ -141,7 +141,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           const transacoesExistentes = snapshot.exists() ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val())) : [];
 
           const novaTransacao = {
-            id: gerarId(), // CORREÇÃO: era Date.now()_i, agora usa gerarId()
+            id: gerarId(),
             tipo: 'despesa',
             descricao: `${descricao} (${i + 1}/${numParcelas})`,
             valor: valorParcela,
@@ -159,19 +159,20 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           await set(refMes, [...transacoesExistentes, novaTransacao]);
         }
       } else {
-        // Despesa única
-        const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${mesAtual}`);
+        // Despesa única baseada na data do calendário
+        const mesSelecionado = gerarMesKey(dataSelecionada);
+        const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${mesSelecionado}`);
         const snapshot = await get(refMes);
         const transacoesExistentes = snapshot.exists() ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val())) : [];
 
         const novaTransacao = {
-          id: gerarId(), // CORREÇÃO: era Date.now(), agora usa gerarId()
+          id: gerarId(),
           tipo: 'despesa',
           descricao,
           valor: valorNum,
           categoria,
           pessoa: responsavel,
-          data: dataAtual,
+          data: data, // Usa a string YYYY-MM-DD do input
           metodoPagamento: usarValeAlimentacao ? 'vale_alimentacao' : 'dinheiro',
           pago: false
         };
@@ -259,6 +260,33 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
 
         {/* Formulário */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          
+          {/* Campo de Data (Calendário) */}
+          <div>
+            <label style={{
+              display: 'block',
+              fontWeight: '600',
+              marginBottom: '0.5rem',
+              fontSize: '0.875rem',
+              color: '#374151'
+            }}>
+              📅 Data
+            </label>
+            <input
+              type="date"
+              value={data}
+              onChange={(e) => setData(e.target.value)}
+              style={{
+                width: '100%',
+                padding: '0.75rem',
+                border: '1px solid #e5e7eb',
+                borderRadius: '0.5rem',
+                fontSize: '0.9375rem',
+                boxSizing: 'border-box'
+              }}
+            />
+          </div>
+
           {/* Descrição */}
           <div>
             <label style={{
