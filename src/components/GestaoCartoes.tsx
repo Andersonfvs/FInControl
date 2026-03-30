@@ -230,43 +230,27 @@ function isBourbonZaffari(texto: string): boolean {
 
 function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
-  const linhas = texto.split('\n');
 
-  // Tenta encontrar o início real da tabela de lançamentos
-  let naTabela = false;
+  // Ignora o cabeçalho e textos legais iniciais
+  const partes = texto.split('Demonstrativo de Lançamentos');
+  if (partes.length < 2) return [];
+  const corpoTabela = partes[1];
 
-  for (const linha of linhas) {
-    const l = linha.trim();
-    if (!l) continue;
+  const regex = /(\d{2}\/\d{2})\s+(.*?)\s+(\d+,\d{2})/g;
+  let match;
 
-    // Ativa quando encontra o cabeçalho ou similar
-    if (/data\s+lançamentos\s+valor/i.test(l)) {
-      naTabela = true;
-      continue;
-    }
+  while ((match = regex.exec(corpoTabela)) !== null) {
+    const [, dataDDMM, descRaw, valorStr] = match;
 
-    // Se encontrar texto de quitação anual ou informativo, ignora
-    if (/lei\s+12\.007|quitação\s+anual|declaração|fique\s+atento/i.test(l)) {
-      continue;
-    }
-
-    // Se ainda não chegou na tabela, ignora (evita pegar datas do cabeçalho)
-    if (!naTabela) continue;
-
-    const matchData = l.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
-    if (!matchData) continue;
-
-    const [, dataDDMM, resto, valorStr] = matchData;
-
-    // Filtro adicional de palavras que indicam que não é um gasto real
-    if (/lei\b|quitaç|declaraç|substituindo|comprovação|obrigaç|consumidor|eventuais|titular|fique atento/i.test(resto)) continue;
-    if (/^pagamento|encargos|juros|manutenção de conta|manutencao|multa|saldo anterior|total da fatura/i.test(resto.toLowerCase().trim())) continue;
+    // Filtros de segurança
+    if (/pagamento|encargos|juros|manutenção|multa|saldo|total/i.test(descRaw)) continue;
+    if (/lei\s+12\.007|quitação/i.test(descRaw)) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
 
     const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
-    let descricao = resto.trim();
+    let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
     // Extrai parcelamento: "parc. 6/6" ou "parc. 1/4"
@@ -278,7 +262,6 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
       descricao = descricao.replace(/\s*Parcela de Compra\s*[–\-]\s*parc\.\s*\d{1,2}\/\d{1,2}/i, '').trim();
     }
 
-    // Remove "Compra à Vista"
     descricao = descricao.replace(/\s*Compra à Vista\s*/i, '').trim();
     if (descricao.length < 2) continue;
 
@@ -371,21 +354,17 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
   };
 
   const resultado: LinhaExtrato[] = [];
-  const linhas = texto.split('\n');
 
-  for (const linha of linhas) {
-    // Formato: "07 FEV Descrição R$ 30,18" ou "07 FEV Descrição −R$ 531,78"
-    // Nota: O Nubank usa o caractere "−" (U+2212) para negativo em alguns PDFs, ou "-" (hífen comum)
-    const m = linha.match(/^(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+([−-]?)\s*R\$\s*([\d.,]+)\s*$/i);
-    if (!m) continue;
+  // Regex global para pegar gastos em qualquer página
+  const regex = /(\d{1,2}\s+[A-Z]{3})\n+(?:.*?\n+)?(.*?)\n+(?:R\$\s+)?(\d+,\d{2})/g;
+  let match;
 
-    const [, dia, mesStr, descRaw, sinal, valorStr] = m;
+  while ((match = regex.exec(texto)) !== null) {
+    const [, dataBR, descRaw, valorStr] = match;
+    const [dia, mesStr] = dataBR.split(' ');
 
-    // Ignora negativos (pagamentos, créditos, estornos)
-    if (sinal === '-' || sinal === '−') continue;
-
-    // Ignora linhas de controle
-    if (/^pagamento|crédito de parcel|saldo restante|total a pagar|parcelamento de compra "/i.test(descRaw.trim())) continue;
+    // Filtros de segurança
+    if (/pagamento|estorno|crédito|recebido|transferência/i.test(descRaw)) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -406,10 +385,7 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
       descricao = descricao.replace(/\s*[-–]\s*Parcela\s+\d{1,2}\/\d{1,2}/i, '').trim();
     }
 
-    // Remove prefixo "Parcelamento de Compra" que o Nubank adiciona em parcelamentos
     descricao = descricao.replace(/^Parcelamento de Compra\s+/i, '').trim();
-
-    // Remove aspas que o Nubank coloca ao redor do nome da loja
     descricao = descricao.replace(/^[""](.+?)[""]$/, '$1').trim();
 
     if (descricao.length < 2) continue;

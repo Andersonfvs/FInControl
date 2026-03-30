@@ -319,24 +319,24 @@ export default function DashboardPage() {
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
-      const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
+      const novasFaturas: { [mesKey: string]: FaturaMensal[] } = JSON.parse(JSON.stringify(sistema.faturas));
       const porMes: { [k: string]: ItemFatura[] } = {};
       itens.forEach(item => {
         const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
         if (!porMes[k]) porMes[k] = [];
         porMes[k].push(item);
       });
-      for (const mesKey in porMes) {
-        if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
-        const itensDoMes = porMes[mesKey];
+      for (const kMes in porMes) {
+        if (!novasFaturas[kMes]) novasFaturas[kMes] = [];
+        const itensDoMes = porMes[kMes];
         const cartaoId = itensDoMes[0].cartaoId;
-        const existente = novasFaturas[mesKey].find((f: FaturaMensal) => f.cartaoId === cartaoId);
+        const existente = novasFaturas[kMes].find((f: FaturaMensal) => f.cartaoId === cartaoId);
         if (existente) {
           existente.itens = existente.itens || [];
           existente.itens.push(...itensDoMes);
           existente.totalFatura = existente.itens.reduce((s: number, i: ItemFatura) => s + i.valor, 0);
         } else {
-          novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
+          novasFaturas[kMes].push({ cartaoId, mesReferencia: kMes, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
         }
       }
       await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
@@ -392,10 +392,10 @@ export default function DashboardPage() {
   };
 
   const calcularSaldoVale = () => {
-    const mesKey = gerarMesKey(dataReferencia);
-    const transacoes = sistema.dadosPorMes[mesKey] || [];
-    const receitasVale = transacoes.filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação').reduce((acc, t) => acc + t.valor, 0);
-    const despesasVale = transacoes.filter(t => t.tipo === 'despesa' && (t as Transacao).metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
+    const kMes = gerarMesKey(dataReferencia);
+    const tMes = sistema.dadosPorMes[kMes] || [];
+    const receitasVale = tMes.filter(t => t.tipo === 'renda' && t.categoria === 'Vale Alimentação').reduce((acc, t) => acc + t.valor, 0);
+    const despesasVale = tMes.filter(t => t.tipo === 'despesa' && (t as Transacao).metodoPagamento === 'vale_alimentacao').reduce((acc, t) => acc + t.valor, 0);
     return receitasVale - despesasVale;
   };
 
