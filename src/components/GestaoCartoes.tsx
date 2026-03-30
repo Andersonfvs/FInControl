@@ -57,7 +57,8 @@ function detectarCategoriaPorDescricao(desc: string): string {
 
 // ─── Converte valor string BR para number ────────────────────────────────────
 function converterValor(str: string): number {
-  const s = str.replace(/\s/g, '');
+  // Remove "R$", espaços, e trata pontos como separadores de milhar e vírgula como decimal
+  const s = str.replace(/R\$\s?/, '').replace(/\s/g, '').trim();
   if (s.includes(',') && s.includes('.')) {
     return parseFloat(s.replace(/\./g, '').replace(',', '.'));
   } else if (s.includes(',')) {
@@ -231,19 +232,35 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
   const resultado: LinhaExtrato[] = [];
   const linhas = texto.split('\n');
 
+  // Tenta encontrar o início real da tabela de lançamentos
+  let naTabela = false;
+
   for (const linha of linhas) {
-    const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
+    const l = linha.trim();
+    if (!l) continue;
+
+    // Ativa quando encontra o cabeçalho ou similar
+    if (/data\s+lançamentos\s+valor/i.test(l)) {
+      naTabela = true;
+      continue;
+    }
+
+    // Se encontrar texto de quitação anual ou informativo, ignora
+    if (/lei\s+12\.007|quitação\s+anual|declaração|fique\s+atento/i.test(l)) {
+      continue;
+    }
+
+    // Se ainda não chegou na tabela, ignora (evita pegar datas do cabeçalho)
+    if (!naTabela) continue;
+
+    const matchData = l.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
     if (!matchData) continue;
 
     const [, dataDDMM, resto, valorStr] = matchData;
 
-    // CORREÇÃO: ignora linhas de texto legal/informativo do PDF
-    // O bloco "Fique Atento" contém "Lei 12.007, de 29/07/2009" que o parser
-    // confundia com uma transação (data=29/07, valor=12, desc="quitações mensais")
-    if (/lei\b|quitaç|declaraç|substituindo|comprovação|obrigaç|consumidor|eventuais|titular/i.test(resto)) continue;
-
-    // Ignora pagamentos e encargos financeiros
-    if (/^pagamento|encargos|juros de mora|manutenção de conta|manutencao|multa/i.test(resto.trim())) continue;
+    // Filtro adicional de palavras que indicam que não é um gasto real
+    if (/lei\b|quitaç|declaraç|substituindo|comprovação|obrigaç|consumidor|eventuais|titular|fique atento/i.test(resto)) continue;
+    if (/^pagamento|encargos|juros|manutenção de conta|manutencao|multa|saldo anterior|total da fatura/i.test(resto.toLowerCase().trim())) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -358,13 +375,14 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
   for (const linha of linhas) {
     // Formato: "07 FEV Descrição R$ 30,18" ou "07 FEV Descrição −R$ 531,78"
-    const m = linha.match(/^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+(-?)R\$\s*([\d.,]+)\s*$/i);
+    // Nota: O Nubank usa o caractere "−" (U+2212) para negativo em alguns PDFs, ou "-" (hífen comum)
+    const m = linha.match(/^(\d{1,2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+([−-]?)\s*R\$\s*([\d.,]+)\s*$/i);
     if (!m) continue;
 
     const [, dia, mesStr, descRaw, sinal, valorStr] = m;
 
-    // Ignora negativos (pagamentos, créditos)
-    if (sinal === '-') continue;
+    // Ignora negativos (pagamentos, créditos, estornos)
+    if (sinal === '-' || sinal === '−') continue;
 
     // Ignora linhas de controle
     if (/^pagamento|crédito de parcel|saldo restante|total a pagar|parcelamento de compra "/i.test(descRaw.trim())) continue;
@@ -374,7 +392,7 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
     const mesNum = parseInt(MESES[mesStr.toUpperCase()]);
     const anoNum = mesNum > mesRefNum ? anoRefNum - 1 : anoRefNum;
-    const data = `${anoNum}-${String(mesNum).padStart(2, '0')}-${dia}`;
+    const data = `${anoNum}-${String(mesNum).padStart(2, '0')}-${dia.padStart(2, '0')}`;
 
     let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
@@ -675,6 +693,21 @@ export default function GestaoCartoes({
 
       const linhasConciliadas = conciliar(linhasParsadas, faturas, transacoesPorMes, cartaoImportId);
       setLinhasExtrato(linhasConciliadas);
+
+      // Tenta validar o total se disponível no texto
+      const totalMatch = textoCompleto.match(/TOTAL\s+DA\s+FATURA\s+R\$\s*([\d.,]+)/i) ||
+                         textoCompleto.match(/Valor\s+Total\s*R\$\s*([\d.,]+)/i) ||
+                         textoCompleto.match(/Total\s+a\s+pagar\s*R\$\s*([\d.,]+)/i);
+
+      if (totalMatch) {
+        const totalFaturaPDF = converterValor(totalMatch[1]);
+        const totalCalculado = linhasParsadas.reduce((acc, l) => acc + l.valor, 0);
+
+        if (Math.abs(totalFaturaPDF - totalCalculado) > 1.0) {
+          console.warn(`Diferença no total da fatura: PDF=${totalFaturaPDF}, Calculado=${totalCalculado}`);
+          // Não bloqueia, mas poderia mostrar um aviso
+        }
+      }
     } catch (err) {
       console.error(err);
       setErroImport('Erro ao processar o PDF. Tente novamente.');
