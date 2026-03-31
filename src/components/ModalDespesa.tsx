@@ -5,6 +5,18 @@ import { ref, set, get } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { obterCategoriasDisponiveis, obterEmoji } from '@/utils/categorias';
 import { gerarMesKey, gerarId } from '@/utils/financeiro';
+import { CategoriaCustomizada } from '@/types';
+
+interface TransacaoParaEditar {
+  id: string;
+  descricao: string;
+  valor: number;
+  categoria: string;
+  pessoa: string;
+  data: string;
+  metodoPagamento?: string;
+  mesKey: string;
+}
 
 interface Props {
   aberto: boolean;
@@ -12,6 +24,8 @@ interface Props {
   userId: string;
   categoriaPreenchida?: string;
   descricaoPreenchida?: string;
+  transacaoParaEditar?: TransacaoParaEditar;
+  categoriasCustomizadas?: CategoriaCustomizada[];
 }
 
 // Mapeamento inteligente de palavras-chave para categorias
@@ -49,10 +63,10 @@ function detectarCategoria(texto: string): string {
   return 'Outras Despesas';
 }
 
-export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenchida, descricaoPreenchida }: Props) {
+export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenchida, descricaoPreenchida, transacaoParaEditar, categoriasCustomizadas = [] }: Props) {
   const [descricao, setDescricao] = useState('');
   const [valor, setValor] = useState('');
-  const [data, setData] = useState(new Date().toISOString().split('T')[0]); // NOVO: Estado da data
+  const [data, setData] = useState(new Date().toISOString().split('T')[0]);
   const [categoria, setCategoria] = useState('Outras Despesas');
   const [responsavel, setResponsavel] = useState('Anderson Ferreira');
   const [parcelado, setParcelado] = useState(false);
@@ -61,23 +75,43 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
-  const categorias = obterCategoriasDisponiveis();
+  // Mescla categorias fixas com as customizadas de despesa
+  const categoriasFixas = obterCategoriasDisponiveis();
+  const categoriasCustomDespesa = (categoriasCustomizadas || [])
+    .filter(c => c.tipo === 'despesa')
+    .map(c => c.nome)
+    .filter(nome => !categoriasFixas.includes(nome));
+  const categorias = [...categoriasFixas, ...categoriasCustomDespesa];
 
-  // Preencher automaticamente quando vier dos atalhos
+  const modoEdicao = !!transacaoParaEditar;
+
+  // Preencher campos ao abrir — modo edição ou modo criação via atalhos
   useEffect(() => {
     if (aberto) {
-      if (categoriaPreenchida) setCategoria(categoriaPreenchida);
-      if (descricaoPreenchida) setDescricao(descricaoPreenchida);
+      if (transacaoParaEditar) {
+        // Modo edição: preenche todos os campos com os dados existentes
+        setDescricao(transacaoParaEditar.descricao);
+        setValor(String(transacaoParaEditar.valor));
+        setData(transacaoParaEditar.data);
+        setCategoria(transacaoParaEditar.categoria);
+        setResponsavel(transacaoParaEditar.pessoa);
+        setUsarValeAlimentacao(transacaoParaEditar.metodoPagamento === 'vale_alimentacao');
+        setParcelado(false);
+      } else {
+        // Modo criação: preenche apenas o que veio dos atalhos
+        if (categoriaPreenchida) setCategoria(categoriaPreenchida);
+        if (descricaoPreenchida) setDescricao(descricaoPreenchida);
+      }
     }
-  }, [aberto, categoriaPreenchida, descricaoPreenchida]);
+  }, [aberto, categoriaPreenchida, descricaoPreenchida, transacaoParaEditar]);
 
-  // Detecção inteligente de categoria ao digitar
+  // Detecção inteligente de categoria ao digitar (só no modo criação)
   useEffect(() => {
-    if (descricao.length > 3 && !categoriaPreenchida) {
+    if (descricao.length > 3 && !categoriaPreenchida && !modoEdicao) {
       const categoriaDetectada = detectarCategoria(descricao);
       setCategoria(categoriaDetectada);
     }
-  }, [descricao, categoriaPreenchida]);
+  }, [descricao, categoriaPreenchida, modoEdicao]);
 
   // Resetar ao fechar
   useEffect(() => {
@@ -124,10 +158,34 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
 
     try {
       const valorNum = parseFloat(valor);
-      // Ajuste de data para evitar problemas de fuso horário (meio-dia)
       const dataSelecionada = new Date(data + 'T12:00:00');
 
-      if (parcelado && numParcelas > 1) {
+      if (modoEdicao && transacaoParaEditar) {
+        // Modo edição: atualiza a transação existente no mesKey original
+        const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${transacaoParaEditar.mesKey}`);
+        const snapshot = await get(refMes);
+        const transacoesExistentes: any[] = snapshot.exists()
+          ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
+          : [];
+
+        const transacoesAtualizadas = transacoesExistentes.map((t: any) =>
+          t.id === transacaoParaEditar.id
+            ? {
+                ...t,
+                descricao: descricao.trim(),
+                valor: valorNum,
+                categoria,
+                pessoa: responsavel,
+                data,
+                metodoPagamento: usarValeAlimentacao ? 'vale_alimentacao' : 'dinheiro',
+              }
+            : t
+        );
+
+        await set(refMes, transacoesAtualizadas);
+
+      } else if (parcelado && numParcelas > 1) {
+        // Modo criação parcelada
         const valorParcela = parseFloat((valorNum / numParcelas).toFixed(2));
 
         for (let i = 0; i < numParcelas; i++) {
@@ -159,7 +217,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           await set(refMes, [...transacoesExistentes, novaTransacao]);
         }
       } else {
-        // Despesa única baseada na data do calendário
+        // Modo criação simples
         const mesSelecionado = gerarMesKey(dataSelecionada);
         const refMes = ref(database, `usuarios/${userId}/dadosPorMes/${mesSelecionado}`);
         const snapshot = await get(refMes);
@@ -172,7 +230,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           valor: valorNum,
           categoria,
           pessoa: responsavel,
-          data: data, // Usa a string YYYY-MM-DD do input
+          data: data,
           metodoPagamento: usarValeAlimentacao ? 'vale_alimentacao' : 'dinheiro',
           pago: false
         };
@@ -225,9 +283,9 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
           marginBottom: '1.5rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ fontSize: '1.5rem' }}>💸</span>
+            <span style={{ fontSize: '1.5rem' }}>{modoEdicao ? '✏️' : '💸'}</span>
             <h3 style={{ fontSize: '1.25rem', fontWeight: '700', color: '#111827', margin: 0 }}>
-              Nova Despesa
+              {modoEdicao ? 'Editar Despesa' : 'Nova Despesa'}
             </h3>
           </div>
           <button
@@ -445,78 +503,80 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
             </label>
           </div>
 
-          {/* Parcelamento */}
-          <div style={{
-            background: '#fef3c7',
-            border: '2px solid #fcd34d',
-            borderRadius: '0.75rem',
-            padding: '1rem'
-          }}>
-            <label style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.75rem',
-              cursor: 'pointer',
-              marginBottom: parcelado ? '1rem' : 0
+          {/* Parcelamento — oculto no modo edição */}
+          {!modoEdicao && (
+            <div style={{
+              background: '#fef3c7',
+              border: '2px solid #fcd34d',
+              borderRadius: '0.75rem',
+              padding: '1rem'
             }}>
-              <input
-                type="checkbox"
-                checked={parcelado}
-                onChange={(e) => setParcelado(e.target.checked)}
-                style={{
-                  width: '20px',
-                  height: '20px',
-                  cursor: 'pointer',
-                  accentColor: '#f59e0b'
-                }}
-              />
-              <span style={{
-                fontWeight: '600',
-                color: '#92400e',
-                fontSize: '0.9375rem'
+              <label style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.75rem',
+                cursor: 'pointer',
+                marginBottom: parcelado ? '1rem' : 0
               }}>
-                💳 Parcelar despesa
-              </span>
-            </label>
-
-            {parcelado && (
-              <div>
-                <label style={{
-                  display: 'block',
-                  fontWeight: '600',
-                  marginBottom: '0.5rem',
-                  fontSize: '0.875rem',
-                  color: '#92400e'
-                }}>
-                  Número de parcelas
-                </label>
                 <input
-                  type="number"
-                  min="2"
-                  max="24"
-                  value={numParcelas}
-                  onChange={(e) => setNumParcelas(parseInt(e.target.value) || 2)}
+                  type="checkbox"
+                  checked={parcelado}
+                  onChange={(e) => setParcelado(e.target.checked)}
                   style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    border: '1px solid #fcd34d',
-                    borderRadius: '0.5rem',
-                    fontSize: '0.9375rem',
-                    boxSizing: 'border-box'
+                    width: '20px',
+                    height: '20px',
+                    cursor: 'pointer',
+                    accentColor: '#f59e0b'
                   }}
                 />
-                {valor && numParcelas > 1 && (
-                  <div style={{
-                    marginTop: '0.5rem',
-                    fontSize: '0.8125rem',
+                <span style={{
+                  fontWeight: '600',
+                  color: '#92400e',
+                  fontSize: '0.9375rem'
+                }}>
+                  💳 Parcelar despesa
+                </span>
+              </label>
+
+              {parcelado && (
+                <div>
+                  <label style={{
+                    display: 'block',
+                    fontWeight: '600',
+                    marginBottom: '0.5rem',
+                    fontSize: '0.875rem',
                     color: '#92400e'
                   }}>
-                    💡 {numParcelas}x de R$ {(parseFloat(valor) / numParcelas).toFixed(2)}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+                    Número de parcelas
+                  </label>
+                  <input
+                    type="number"
+                    min="2"
+                    max="24"
+                    value={numParcelas}
+                    onChange={(e) => setNumParcelas(parseInt(e.target.value) || 2)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      border: '1px solid #fcd34d',
+                      borderRadius: '0.5rem',
+                      fontSize: '0.9375rem',
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  {valor && numParcelas > 1 && (
+                    <div style={{
+                      marginTop: '0.5rem',
+                      fontSize: '0.8125rem',
+                      color: '#92400e'
+                    }}>
+                      💡 {numParcelas}x de R$ {(parseFloat(valor) / numParcelas).toFixed(2)}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Botões */}
           <div style={{
@@ -546,7 +606,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
               style={{
                 flex: 1,
                 padding: '0.875rem',
-                background: salvando ? '#9ca3af' : 'linear-gradient(135deg, #ef4444, #dc2626)',
+                background: salvando ? '#9ca3af' : modoEdicao ? 'linear-gradient(135deg, #0ea5e9, #0284c7)' : 'linear-gradient(135deg, #ef4444, #dc2626)',
                 color: 'white',
                 border: 'none',
                 borderRadius: '0.5rem',
@@ -554,7 +614,7 @@ export default function ModalDespesa({ aberto, onFechar, userId, categoriaPreenc
                 cursor: salvando ? 'not-allowed' : 'pointer'
               }}
             >
-              {salvando ? 'Salvando...' : 'Salvar'}
+              {salvando ? 'Salvando...' : modoEdicao ? '💾 Salvar Alterações' : 'Salvar'}
             </button>
           </div>
         </div>

@@ -7,6 +7,11 @@ import { Transacao } from '@/types';
 import { gerarMesKey, gerarId } from '@/utils/financeiro';
 import { DadosInputMagico } from '@/utils/categorias';
 
+interface CategoriaItem {
+  nome: string;
+  tipo?: string;
+}
+
 interface Props {
   aberto: boolean;
   onFechar: () => void;
@@ -16,16 +21,17 @@ interface Props {
   onSucesso?: (mensagem: string) => void;
   onErro?: (mensagem: string) => void;
   dadosIniciais?: DadosInputMagico | null;
+  categoriasCustomizadas?: CategoriaItem[];
 }
 
-const CATEGORIAS_RECEITA = [
+const CATEGORIAS_RECEITA_FIXAS = [
   'Salário',
   'Vale Alimentação',
   'Freelance',
   'Venda Shopee',
   'Investimentos',
   'Bônus',
-  'Outras Receitas'
+  'Outras Receitas',
 ];
 
 export default function ModalReceita({
@@ -37,8 +43,17 @@ export default function ModalReceita({
   onSucesso,
   onErro,
   dadosIniciais = null,
+  categoriasCustomizadas = [],
 }: Props) {
   const modoEdicao = !!transacaoEditando;
+
+  // Mescla categorias fixas com as customizadas de receita, sem duplicar
+  const categoriasCustomReceita: string[] = (categoriasCustomizadas || [])
+    .filter((c: CategoriaItem) => c.tipo === 'receita')
+    .map((c: CategoriaItem) => c.nome)
+    .filter((nome: string) => !CATEGORIAS_RECEITA_FIXAS.includes(nome));
+
+  const CATEGORIAS_RECEITA = [...CATEGORIAS_RECEITA_FIXAS, ...categoriasCustomReceita];
 
   const [data, setData] = useState('');
   const [descricao, setDescricao] = useState('');

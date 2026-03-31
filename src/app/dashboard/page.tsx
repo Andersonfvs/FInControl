@@ -643,14 +643,32 @@ export default function DashboardPage() {
         onSucesso={msg => showToast(msg, 'sucesso')}
         onErro={msg => showToast(msg, 'erro')}
         dadosIniciais={dadosIniciais}
+        categoriasCustomizadas={sistema.categoriasCustomizadas}
       />
+
       <ModalDespesa
         aberto={modalDespesaAberto}
         onFechar={handleFecharDespesa}
         userId={usuario.uid}
         categoriaPreenchida={categoriaPreenchida}
         descricaoPreenchida={descricaoPreenchida}
+        categoriasCustomizadas={sistema.categoriasCustomizadas}
+        transacaoParaEditar={
+          transacaoEditando?.tipo === 'despesa'
+            ? {
+                id: transacaoEditando.id,
+                descricao: transacaoEditando.descricao,
+                valor: transacaoEditando.valor,
+                categoria: transacaoEditando.categoria,
+                pessoa: transacaoEditando.pessoa,
+                data: transacaoEditando.data,
+                metodoPagamento: transacaoEditando.metodoPagamento,
+                mesKey: gerarMesKey(new Date(transacaoEditando.data + 'T00:00:00')),
+              }
+            : undefined
+        }
       />
+
       <ModalCadastrarCartao
         key={modalCartaoAberto ? 'aberto' : 'fechado'}
         aberto={modalCartaoAberto}
