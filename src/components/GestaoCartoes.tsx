@@ -77,7 +77,6 @@ function converterData(str: string): string {
 }
 
 // ─── Infere ano para datas DD/MM sem ano (Bradescard, Bourbon, PicPay) ───────
-// Se o mês da linha for maior que o mês de referência, assume ano anterior
 function inferirAno(dataDDMM: string, mesRefNum: number, anoRefNum: number): string {
   const partes = dataDDMM.split('/');
   const dia = partes[0];
@@ -103,8 +102,9 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 1 — RIACHUELO / MIDWAY
-// CORRECAO: captura o valor do "Lancamento do mes" (NN/TT + MENSAL),
-// nao o total original que aparece no final da linha com segundo "+"
+// FIX REAL: está em handleArquivoSelecionado — agrupamento por Y (3px)
+// + ordenação por X garante que data + desc + valor_orig + nº_parc +
+// lançamento cheguem aqui na MESMA linha, e os regex abaixo funcionam.
 // ═══════════════════════════════════════════════════════════════════════
 function isRiachuelo(texto: string): boolean {
   return /midway|riachuelo/i.test(texto.slice(0, 2000));
@@ -117,17 +117,17 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
   for (const linha of linhas) {
     const matchBase = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+)$/);
     if (!matchBase) continue;
-    
+
     const [, dataStr, , resto] = matchBase;
     if (/pagamento|anuidade/i.test(resto)) continue;
-    
+
     let descricao = resto.trim();
     let valor: number | undefined;
     let parcelas: { atual: number; total: number } | undefined;
 
     // CASO 1: parcelamento NN/TT + MENSAL
-    // Formato: DESC [VALOR_ORIG] NN/TT + MENSAL [+ TOTAL]
-    // Queremos o MENSAL, nao o TOTAL
+    // Formato: DESC [VALOR_ORIG] NN/TT + MENSAL
+    // Queremos o MENSAL (lançamento do mês), não o valor original total
     const matchParcMensal = descricao.match(/(\d{1,2})\/(\d{1,2})\s+\+\s+([\d.,]+)/);
     if (matchParcMensal) {
       const atual = parseInt(matchParcMensal[1]);
@@ -142,7 +142,7 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
       }
     }
 
-    // CASO 2: compra a vista
+    // CASO 2: compra à vista
     if (valor === undefined) {
       const matchSinal = descricao.match(/^(.+?)\s+([+-])\s+([\d.,]+)\s*$/);
       if (!matchSinal) continue;
@@ -169,8 +169,6 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 2 — BRADESCARD / TUMELERO
-// Formato: DD/MM DESCRIÇÃO [(PARC/TOTAL)] VALOR
-//          Pagamentos terminam com " -" ou contêm "PAGAMENTO RECEBIDO"
 // ═══════════════════════════════════════════════════════════════════════
 function isBradescard(texto: string): boolean {
   return /bradescard|tumelero/i.test(texto.slice(0, 2000));
@@ -181,13 +179,11 @@ function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number):
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    // Formato: DD/MM DESCRIÇÃO VALOR ou DD/MM DESCRIÇÃO VALOR -
     const matchLinha = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*(-?)$/);
     if (!matchLinha) continue;
 
     const [, dataDDMM, descRaw, valorStr, sinal] = matchLinha;
 
-    // Ignora pagamentos e encargos
     if (sinal === '-') continue;
     if (/pagamento recebido|pagamento/i.test(descRaw)) continue;
     if (/encargos|juros|multa|mora|manutenção|manutencao|tarifa/i.test(descRaw)) continue;
@@ -199,7 +195,6 @@ function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number):
     let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Extrai parcelamento de dentro de parênteses: (06/06), (02/05) etc.
     const matchParcParen = descricao.match(/\((\d{1,2})\/(\d{1,2})\)/);
     if (matchParcParen) {
       const atual = parseInt(matchParcParen[1]);
@@ -208,7 +203,6 @@ function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number):
       descricao = descricao.replace(matchParcParen[0], '').trim();
     }
 
-    // Remove " BR" do final (sufixo do Bradescard para compras à vista)
     descricao = descricao.replace(/\s+BR\s*$/, '').trim();
     if (descricao.length < 2) continue;
 
@@ -228,8 +222,6 @@ function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number):
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 3 — BOURBON / ZAFFARI (Banrisul)
-// Formato: DD/MM ESTABELECIMENTO Parcela de Compra – parc. X/Y VALOR
-//          DD/MM ESTABELECIMENTO Compra à Vista VALOR
 // ═══════════════════════════════════════════════════════════════════════
 function isBourbonZaffari(texto: string): boolean {
   return /bourbon|zaffari|banrisul/i.test(texto.slice(0, 2000));
@@ -247,7 +239,6 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
 
     const [, dataDDMM, resto, valorStr] = matchData;
 
-    // Ignora pagamentos e encargos financeiros
     if (/^pagamento|encargos|juros de mora|manutenção de conta|manutencao|multa/i.test(resto.trim())) continue;
 
     const valor = converterValor(valorStr);
@@ -257,7 +248,6 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
     let descricao = resto.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Extrai parcelamento: "parc. 6/6" ou "parc. 1/4"
     const matchParc = descricao.match(/[–\-]\s*parc\.\s*(\d{1,2})\/(\d{1,2})/i);
     if (matchParc) {
       const atual = parseInt(matchParc[1]);
@@ -266,7 +256,6 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
       descricao = descricao.replace(/\s*Parcela de Compra\s*[–\-]\s*parc\.\s*\d{1,2}\/\d{1,2}/i, '').trim();
     }
 
-    // Remove "Compra à Vista"
     descricao = descricao.replace(/\s*Compra à Vista\s*/i, '').trim();
     if (descricao.length < 2) continue;
 
@@ -286,8 +275,6 @@ function parsearBourbonZaffari(texto: string, mesRefNum: number, anoRefNum: numb
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 4 — PICPAY
-// Formato: DD/MM ESTABELECIMENTOPARCXX/YY VALOR  (parcelamento colado)
-//          DD/MM ESTABELECIMENTO BR SUFIXO VALOR  (à vista)
 // ═══════════════════════════════════════════════════════════════════════
 function isPicPay(texto: string): boolean {
   return /picpay/i.test(texto.slice(0, 2000));
@@ -303,7 +290,6 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
     const [, dataDDMM, descRaw, valorStr] = matchData;
 
-    // Ignora pagamentos, IOF, financiamento, subtotais
     if (/pagamento de fatura|pagamento|iof diario|iof adicional|^fin |subtotal|total geral/i.test(descRaw.trim())) continue;
 
     const valor = converterValor(valorStr);
@@ -313,8 +299,6 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
     let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Parcelamento colado na descrição: DESCRICAOPARC02/03
-    // Ex: "HNA*OBOTICARIOPARC06/10" → "HNA*OBOTICARIO" + parc 6/10
     const matchParcColado = descricao.match(/PARC(\d{1,2})\/(\d{1,2})$/i);
     if (matchParcColado) {
       const atual = parseInt(matchParcColado[1]);
@@ -323,7 +307,6 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
       descricao = descricao.replace(/PARC\d{1,2}\/\d{1,2}$/i, '').trim();
     }
 
-    // Remove sufixos comuns: " BR WEL", " BR GYM", " BR "
     descricao = descricao.replace(/\s+BR\s+\w{0,5}\s*$/, '').trim();
     descricao = descricao.replace(/\s+BR\s*$/, '').trim();
 
@@ -345,10 +328,19 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 5 — NUBANK
-// CORRECAO 1: isNubank busca o texto INTEIRO — "Nu Pagamentos" so aparece
-//   nas paginas internas do PDF (pg 3+), muito alem dos primeiros 2000 chars.
-// CORRECAO 2: filtro ampliado para bloquear encargos financeiros
-//   (Saldo em atraso, Multa, IOF, Juros, Encerramento de divida, etc.)
+//
+// FIX 1 (principal): em handleArquivoSelecionado, o agrupamento Y+sort X
+//   garante que "07 MAR" + "Shopee..." + "R$ 70,60" — que podem estar em
+//   posições diferentes do stream — cheguem aqui como uma única linha
+//   completa, e o regex abaixo casa direto.
+//
+// FIX 2 (filtro): filtro reduzido para excluir APENAS linhas onde a
+//   descrição começa com "pagamento" (pagamento real da fatura).
+//   Encargos positivos — multa, IOF, juros, saldo em atraso — são agora
+//   INCLUÍDOS, pois representam cobranças reais que o usuário deve pagar.
+//   Negativos (−R$) continuam excluídos automaticamente pelo regex.
+//
+// FIX 3: regex sem âncora \s*$ para tolerar lixo residual no final.
 // ═══════════════════════════════════════════════════════════════════════
 function isNubank(texto: string): boolean {
   return /nubank|nu pagamentos/i.test(texto);
@@ -364,17 +356,18 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    // Nubank: "DD MON Descricao R$ VALOR" — valor sempre no FINAL da linha
-    // Entradas negativas (−R$) NAO casam pois o regex exige "R$" sem "-" antes
+    // FIX 3: sem \s*$ — itens negativos (−R$) não casam pois o regex
+    // exige "R$" sem sinal negativo imediatamente antes do valor.
     const m = linha.match(
-      /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+R\$\s*([\d.,]+)\s*$/i
+      /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+R\$\s*([\d.,]+)/i
     );
     if (!m) continue;
-    
+
     const [, dia, mesStr, descRaw, valorStr] = m;
 
-    // Filtra encargos financeiros, pagamentos e creditos
-    if (/pagamento|recebido|credito|estorno|saldo|multa|iof\b|juros|encerramento|atraso|renegoci|complementar/i.test(descRaw)) continue;
+    // FIX 2: exclui apenas "Pagamento em DD MON" (começa com "pagamento").
+    // Encargos (multa, IOF, juros, saldo em atraso) são INCLUÍDOS.
+    if (/^pagamento\b/i.test(descRaw.trim())) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -396,7 +389,7 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
     descricao = descricao.replace(/^Parcelamento de Compra\s+/i, '').trim();
     descricao = descricao.replace(/^["""''](.+?)["""'']$/, '$1').trim();
-    // Remove icones/emojis unicode do inicio
+    // Remove ícones/emojis unicode do início
     descricao = descricao.replace(/^[^a-zA-Z\u00C0-\u00FF0-9"']+/, '').trim();
     descricao = descricao.replace(/\s*[-\u2013\u2022]\s*$/, '').trim();
 
@@ -470,7 +463,6 @@ function parsearGenerico(texto: string): LinhaExtrato[] {
 }
 
 // ─── Roteador de parser ───────────────────────────────────────────────────────
-// Recebe mesReferencia para inferir o ano em faturas com data DD/MM sem ano
 function parsearTextoFatura(texto: string, mesReferencia: string): LinhaExtrato[] {
   const [anoRefStr, mesRefStr] = mesReferencia.split('-');
   const mesRefNum = parseInt(mesRefStr);
@@ -646,26 +638,67 @@ export default function GestaoCartoes({
       }
 
       const arrayBuffer = await arquivo.arrayBuffer();
-      const pdf = (await pdfjsLib.getDocument({ data: arrayBuffer }).promise) as { numPages: number; getPage: (p: number) => Promise<unknown> };
+      const pdf = (await pdfjsLib.getDocument({ data: arrayBuffer }).promise) as {
+        numPages: number;
+        getPage: (p: number) => Promise<unknown>;
+      };
       let textoCompleto = '';
 
       for (let p = 1; p <= pdf.numPages; p++) {
-        const pagina = (await pdf.getPage(p)) as { getTextContent: () => Promise<{ items: { str: string; transform: number[] }[] }> };
+        const pagina = (await pdf.getPage(p)) as {
+          getTextContent: () => Promise<{ items: { str: string; transform: number[] }[] }>;
+        };
         const conteudo = await pagina.getTextContent();
-        // Preserva quebras de linha por item para o parser Riachuelo funcionar
+
+        // ════════════════════════════════════════════════════════════════════
+        // FIX DEFINITIVO — Agrupamento por Y (tolerância 3px) + ordenação X
+        //
+        // O PDF.js processa itens na ordem do stream interno do PDF, que NÃO
+        // é necessariamente a ordem visual esquerda→direita, cima→baixo.
+        //
+        // Problema Riachuelo: o PDF armazena colunas separadas no stream.
+        //   Resultado antigo (stream order):
+        //     linha "19/07/25 026 HNA*OBOTICARIO"   ← só data+desc
+        //     linha "361,45"                         ← só valor original
+        //     linha "09/10"                          ← só nº parcela
+        //     linha "+ 36,14"                        ← só lançamento do mês
+        //   Resultado NOVO (Y-group + X-sort):
+        //     "19/07/25 026 HNA*OBOTICARIO 361,45 09/10 + 36,14" ← completo ✓
+        //
+        // Problema Nubank: "07 MAR" (Y=696.2) e "Shopee..." (Y=694.6) estão
+        //   1.6px separados no stream, mas em posições diferentes do stream.
+        //   Resultado antigo: linhas separadas → regex não casava.
+        //   Resultado NOVO: |696.2 - 694.6| = 1.6 ≤ 3 → mesmo grupo → X-sort
+        //   → "07 MAR Shopee *Entregabikes - Parcela 4/10 R$ 70,60" ✓
+        // ════════════════════════════════════════════════════════════════════
+        interface ItemTexto { str: string; x: number; y: number }
+        const grupos: { yBase: number; itens: ItemTexto[] }[] = [];
         const itens = conteudo.items as { str: string; transform: number[] }[];
-        let linhaPagina = '';
-        let yAnterior: number | null = null;
+
         for (const item of itens) {
-          const y = Math.round(item.transform[5]);
-          if (yAnterior !== null && Math.abs(y - yAnterior) > 3) {
-            textoCompleto += linhaPagina.trim() + '\n';
-            linhaPagina = '';
+          const y = item.transform[5];
+          const x = item.transform[4];
+          const str = item.str;
+          if (!str.trim()) continue;
+
+          // Procura grupo com yBase dentro de 3px de tolerância
+          const grupo = grupos.find(g => Math.abs(g.yBase - y) <= 3);
+          if (grupo) {
+            grupo.itens.push({ str, x, y });
+          } else {
+            grupos.push({ yBase: y, itens: [{ str, x, y }] });
           }
-          linhaPagina += item.str + ' ';
-          yAnterior = y;
         }
-        if (linhaPagina.trim()) textoCompleto += linhaPagina.trim() + '\n';
+
+        // Ordena grupos de cima para baixo (Y decrescente no espaço PDF)
+        grupos.sort((a, b) => b.yBase - a.yBase);
+
+        // Dentro de cada grupo, ordena da esquerda para direita (X crescente)
+        for (const grupo of grupos) {
+          grupo.itens.sort((a, b) => a.x - b.x);
+          const linha = grupo.itens.map(i => i.str).join(' ').trim();
+          if (linha) textoCompleto += linha + '\n';
+        }
       }
 
       if (!textoCompleto.trim()) {
@@ -674,7 +707,6 @@ export default function GestaoCartoes({
         return;
       }
 
-      // Passa mesReferencia para o roteador poder inferir o ano
       const linhasParsadas = parsearTextoFatura(textoCompleto, mesReferencia);
 
       if (linhasParsadas.length === 0) {
@@ -698,7 +730,6 @@ export default function GestaoCartoes({
     if (!onLancarItensCSV) return;
     setLancandoId(linha.id);
 
-    // mesReferencia vem no formato "YYYY-MM" — usa o 1º dia desse mês
     const [anoRef, mesRef] = mesReferencia.split('-').map(Number);
     const dataFatura = new Date(anoRef, mesRef - 1, 1);
 
@@ -706,7 +737,6 @@ export default function GestaoCartoes({
     const itens: ItemFatura[] = [];
 
     if (parcelas && parcelas.atual <= parcelas.total) {
-      // Parcela atual vai para o mês da fatura, próximas para meses seguintes
       for (let i = parcelas.atual; i <= parcelas.total; i++) {
         const dataParcela = new Date(dataFatura);
         dataParcela.setMonth(dataFatura.getMonth() + (i - parcelas.atual));
@@ -724,7 +754,6 @@ export default function GestaoCartoes({
         });
       }
     } else {
-      // Sem parcelamento → vai direto para o mês da fatura
       itens.push({
         id: gerarId(),
         cartaoId: cartaoImportId,
@@ -750,7 +779,6 @@ export default function GestaoCartoes({
     pendentes.forEach(l => handleLancarItem(l));
   };
 
-  // ── Funções existentes ───────────────────────────────────────────────────────
   const obterFatura = (cartaoId: string): FaturaMensal | null => {
     const faturasDoMes = faturas[mesReferencia] || [];
     return faturasDoMes.find((f: FaturaMensal) => f.cartaoId === cartaoId) || null;
