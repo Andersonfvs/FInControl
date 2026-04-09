@@ -115,7 +115,7 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    const matchBase = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+)$/);
+    const matchBase = linha.match(/^(\d{2}\/\d{2}\/\d{2,4})\s*(\d{3})\s+(.+)$/);
     if (!matchBase) continue;
 
     const [, dataStr, , resto] = matchBase;
@@ -128,7 +128,7 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
     // CASO 1: parcelamento NN/TT + MENSAL
     // Formato: DESC [VALOR_ORIG] NN/TT + MENSAL
     // Queremos o MENSAL (lançamento do mês), não o valor original total
-    const matchParcMensal = descricao.match(/(\d{1,2})\/(\d{1,2})\s+\+\s+([\d.,]+)/);
+    const matchParcMensal = descricao.match(/(\d{1,2})\/(\d{1,2})\s*\+\s*([\d.,]+)/);
     if (matchParcMensal) {
       const atual = parseInt(matchParcMensal[1]);
       const total = parseInt(matchParcMensal[2]);
@@ -136,9 +136,9 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
         parcelas = { atual, total };
         valor = converterValor(matchParcMensal[3]);
         descricao = descricao
-          .replace(/\s+[\d.,]+\s+\d{1,2}\/\d{1,2}\s+\+\s+[\d.,]+.*$/, '')
-          .replace(/\s+\d{1,2}\/\d{1,2}\s+\+\s+[\d.,]+.*$/, '')
-          .trim();
+        .replace(/\s+[\d.,]+\s+\d{1,2}\/\d{1,2}\s*\+\s*[\d.,]+.*$/, '')
+        .replace(/\s+\d{1,2}\/\d{1,2}\s*\+\s*[\d.,]+.*$/, '')
+        .trim();
       }
     }
 
