@@ -107,7 +107,7 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
 // lançamento cheguem aqui na MESMA linha, e os regex abaixo funcionam.
 // ═══════════════════════════════════════════════════════════════════════
 function isRiachuelo(texto: string): boolean {
-  return /midway|riachuelo/i.test(texto.slice(0, 2000));
+  return /midway|riachuelo/i.test(texto);
 }
 
 function parsearRiachuelo(texto: string): LinhaExtrato[] {
