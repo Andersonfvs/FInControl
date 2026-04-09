@@ -103,7 +103,8 @@ function detectarParcelamento(desc: string): { atual: number; total: number } | 
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 1 — RIACHUELO / MIDWAY
-// Formato: DD/MM/YY COD DESCRIÇÃO [VALOR_ORIGINAL] [PARC/TOTAL] + VALOR
+// CORRECAO: captura o valor do "Lancamento do mes" (NN/TT + MENSAL),
+// nao o total original que aparece no final da linha com segundo "+"
 // ═══════════════════════════════════════════════════════════════════════
 function isRiachuelo(texto: string): boolean {
   return /midway|riachuelo/i.test(texto.slice(0, 2000));
@@ -114,40 +115,47 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    const matchLinha = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+?)\s+([+-])\s+([\d.,]+)\s*$/);
-    if (!matchLinha) continue;
-
-    const [, dataStr, , meio, sinal, valorStr] = matchLinha;
-
-    // Ignora pagamentos (sinal -)
-    if (sinal === '-') continue;
-
-    const valor = converterValor(valorStr);
-    if (isNaN(valor) || valor <= 0) continue;
-
-    const data = converterData(dataStr);
-    let descricao = meio.trim();
+    const matchBase = linha.match(/^(\d{2}\/\d{2}\/\d{2})\s+(\d{3})\s+(.+)$/);
+    if (!matchBase) continue;
+    
+    const [, dataStr, , resto] = matchBase;
+    if (/pagamento|anuidade/i.test(resto)) continue;
+    
+    let descricao = resto.trim();
+    let valor: number | undefined;
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Extrai parcelamento XX/YY do final
-    const matchParc = descricao.match(/\b(\d{1,2})\/(\d{1,2})\s*$/);
-    if (matchParc) {
-      const atual = parseInt(matchParc[1]);
-      const total = parseInt(matchParc[2]);
+    // CASO 1: parcelamento NN/TT + MENSAL
+    // Formato: DESC [VALOR_ORIG] NN/TT + MENSAL [+ TOTAL]
+    // Queremos o MENSAL, nao o TOTAL
+    const matchParcMensal = descricao.match(/(\d{1,2})\/(\d{1,2})\s+\+\s+([\d.,]+)/);
+    if (matchParcMensal) {
+      const atual = parseInt(matchParcMensal[1]);
+      const total = parseInt(matchParcMensal[2]);
       if (atual >= 1 && total >= 2 && atual <= total && total <= 72) {
         parcelas = { atual, total };
+        valor = converterValor(matchParcMensal[3]);
+        descricao = descricao
+          .replace(/\s+[\d.,]+\s+\d{1,2}\/\d{1,2}\s+\+\s+[\d.,]+.*$/, '')
+          .replace(/\s+\d{1,2}\/\d{1,2}\s+\+\s+[\d.,]+.*$/, '')
+          .trim();
       }
-      descricao = descricao.replace(matchParc[0], '').trim();
     }
 
-    // Remove valor original: ex "2.999,00"
-    descricao = descricao.replace(/\s+[\d.]+,\d{2}\s*$/, '').trim();
+    // CASO 2: compra a vista
+    if (valor === undefined) {
+      const matchSinal = descricao.match(/^(.+?)\s+([+-])\s+([\d.,]+)\s*$/);
+      if (!matchSinal) continue;
+      if (matchSinal[2] === '-') continue;
+      valor = converterValor(matchSinal[3]);
+      descricao = matchSinal[1].trim();
+    }
 
-    if (descricao.length < 2) continue;
+    if (!valor || isNaN(valor) || valor <= 0) continue;
 
     resultado.push({
       id: gerarId(),
-      data,
+      data: converterData(dataStr),
       descricao,
       valor,
       categoria: detectarCategoriaPorDescricao(descricao),
@@ -337,11 +345,13 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
 // ═══════════════════════════════════════════════════════════════════════
 // PARSER 5 — NUBANK
-// Formato: DD MES DESCRIÇÃO R$ VALOR  (data por extenso: 07 FEV, 22 MAR...)
-// Negativos (pagamentos, créditos) são ignorados pelo sinal "-" antes do R$
+// CORRECAO 1: isNubank busca o texto INTEIRO — "Nu Pagamentos" so aparece
+//   nas paginas internas do PDF (pg 3+), muito alem dos primeiros 2000 chars.
+// CORRECAO 2: filtro ampliado para bloquear encargos financeiros
+//   (Saldo em atraso, Multa, IOF, Juros, Encerramento de divida, etc.)
 // ═══════════════════════════════════════════════════════════════════════
 function isNubank(texto: string): boolean {
-  return /nubank|nu pagamentos/i.test(texto.slice(0, 2000));
+  return /nubank|nu pagamentos/i.test(texto);
 }
 
 function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
@@ -354,14 +364,17 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
   const linhas = texto.split('\n');
 
   for (const linha of linhas) {
-    const regex = /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s*(?:[-–•]\s*)?R\$\s*([\d.,]+)/i;
-    const m = linha.match(regex);
+    // Nubank: "DD MON Descricao R$ VALOR" — valor sempre no FINAL da linha
+    // Entradas negativas (−R$) NAO casam pois o regex exige "R$" sem "-" antes
+    const m = linha.match(
+      /^(\d{2})\s+(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s+(.+?)\s+R\$\s*([\d.,]+)\s*$/i
+    );
     if (!m) continue;
-
+    
     const [, dia, mesStr, descRaw, valorStr] = m;
 
-    // Ignora pagamentos e créditos
-    if (/pagamento|recebido|crédito|estorno|saldo restante|total a pagar/i.test(descRaw)) continue;
+    // Filtra encargos financeiros, pagamentos e creditos
+    if (/pagamento|recebido|credito|estorno|saldo|multa|iof\b|juros|encerramento|atraso|renegoci|complementar/i.test(descRaw)) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -373,19 +386,19 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
     let descricao = descRaw.trim();
     let parcelas: { atual: number; total: number } | undefined;
 
-    // Extrai parcelamento: "- Parcela 3/10" ou "- Parcela 1/4"
-    const matchParc = descricao.match(/[-–]\s*Parcela\s+(\d{1,2})\/(\d{1,2})/i);
+    const matchParc = descricao.match(/[-\u2013]\s*Parcela\s+(\d{1,2})\/(\d{1,2})/i);
     if (matchParc) {
       const atual = parseInt(matchParc[1]);
       const total = parseInt(matchParc[2]);
       if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
-      descricao = descricao.replace(/\s*[-–]\s*Parcela\s+\d{1,2}\/\d{1,2}/i, '').trim();
+      descricao = descricao.replace(/\s*[-\u2013]\s*Parcela\s+\d{1,2}\/\d{1,2}/i, '').trim();
     }
 
-    // Limpeza da descrição
     descricao = descricao.replace(/^Parcelamento de Compra\s+/i, '').trim();
-    descricao = descricao.replace(/^[""](.+?)[""]$/, '$1').trim();
-    descricao = descricao.replace(/\s*[-–•]\s*$/, '').trim();
+    descricao = descricao.replace(/^["""''](.+?)["""'']$/, '$1').trim();
+    // Remove icones/emojis unicode do inicio
+    descricao = descricao.replace(/^[^a-zA-Z\u00C0-\u00FF0-9"']+/, '').trim();
+    descricao = descricao.replace(/\s*[-\u2013\u2022]\s*$/, '').trim();
 
     if (descricao.length < 2) continue;
 
