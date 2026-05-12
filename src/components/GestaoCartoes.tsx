@@ -176,7 +176,29 @@ function isBradescard(texto: string): boolean {
 
 function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
-  const linhas = texto.split('\n');
+  const linhasBrut = texto.split('\n');
+
+  // Pré-processador: o pdfjsLib às vezes separa a coluna de parcelamento/valor
+  // da coluna de data/descrição em Y-groups distintos. Quando isso ocorre, a
+  // linha fica sem valor no final. Detectamos esse caso e juntamos com a próxima.
+  // Exemplo de quebra:
+  //   "12/02 JIM COM ANDERSON FERRE CANOAS"   ← sem valor
+  //   "(03/05) 64,91"                          ← valor na linha seguinte
+  const linhas: string[] = [];
+  for (let i = 0; i < linhasBrut.length; i++) {
+    const l = linhasBrut[i];
+    const ehLinhaTrans = /^\d{2}\/\d{2}\s/.test(l);
+    const temValorNoFinal = /[\d.,]+\s*-?\s*$/.test(l);
+    if (ehLinhaTrans && !temValorNoFinal) {
+      const prox = (linhasBrut[i + 1] || '').trim();
+      if (prox && /^(\(\d{1,2}\/\d{1,2}\)\s*)?[\d.,]+\s*-?\s*$/.test(prox)) {
+        linhas.push(l.trim() + ' ' + prox);
+        i++;
+        continue;
+      }
+    }
+    linhas.push(l);
+  }
 
   for (const linha of linhas) {
     const matchLinha = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*(-?)$/);
@@ -290,7 +312,7 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
     const [, dataDDMM, descRaw, valorStr] = matchData;
 
-    if (/pagamento de fatura|pagamento|iof diario|iof adicional|^fin |subtotal|total geral/i.test(descRaw.trim())) continue;
+    if (/pagamento de fatura|pagamento|iof diario|iof adicional|^fin |subtotal|total geral|^credito\s/i.test(descRaw.trim())) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
@@ -409,6 +431,61 @@ function parsearNubank(texto: string, mesRefNum: number, anoRefNum: number): Lin
   return resultado;
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// PARSER 6 — BANCO CSF / ATACADÃO / CARREFOUR
+// Formato: DD/MM DESCRICAO [- N/N] VALOR[-]
+// Pagamentos encerram com "-" após o valor.
+// ═══════════════════════════════════════════════════════════════════════
+function isCSF(texto: string): boolean {
+  return /banco\s*csf|csf\s*s\.a/i.test(texto);
+}
+
+function parsearCSF(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
+  const resultado: LinhaExtrato[] = [];
+  const linhas = texto.split('\n');
+
+  for (const linha of linhas) {
+    const matchLinha = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)(-?)\s*$/);
+    if (!matchLinha) continue;
+
+    const [, dataDDMM, descRaw, valorStr, sinal] = matchLinha;
+
+    if (sinal === '-') continue;
+    if (/^pagamento\b/i.test(descRaw.trim())) continue;
+
+    const valor = converterValor(valorStr);
+    if (isNaN(valor) || valor <= 0) continue;
+
+    const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
+    let descricao = descRaw.trim();
+    let parcelas: { atual: number; total: number } | undefined;
+
+    const matchParc = descricao.match(/\s+-\s+(\d{1,2})\/(\d{1,2})$/);
+    if (matchParc) {
+      const atual = parseInt(matchParc[1]);
+      const total = parseInt(matchParc[2]);
+      if (atual >= 1 && total >= 2 && atual <= total && total <= 72) {
+        parcelas = { atual, total };
+      }
+      descricao = descricao.replace(/\s+-\s+\d{1,2}\/\d{1,2}$/, '').trim();
+    }
+
+    if (descricao.length < 2) continue;
+
+    resultado.push({
+      id: gerarId(),
+      data,
+      descricao,
+      valor,
+      categoria: detectarCategoriaPorDescricao(descricao),
+      parcelas,
+      status: 'pendente',
+    });
+  }
+
+  return resultado;
+}
+
 // ─── Parser universal de texto de fatura (fallback para outros bancos) ────────
 function parsearGenerico(texto: string): LinhaExtrato[] {
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
@@ -490,6 +567,11 @@ function parsearTextoFatura(texto: string, mesReferencia: string): LinhaExtrato[
 
   if (isNubank(texto)) {
     const resultado = parsearNubank(texto, mesRefNum, anoRefNum);
+    if (resultado.length > 0) return resultado;
+  }
+
+  if (isCSF(texto)) {
+    const resultado = parsearCSF(texto, mesRefNum, anoRefNum);
     if (resultado.length > 0) return resultado;
   }
 
@@ -577,6 +659,9 @@ export default function GestaoCartoes({
   const [lancandoId, setLancandoId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfJsCarregado = useRef(false);
+  const arrayBufferRef = useRef<ArrayBuffer | null>(null);
+  const [senhaPDF, setSenhaPDF] = useState('');
+  const [precisaSenha, setPrecisaSenha] = useState(false);
 
   useEffect(() => {
     if (pdfJsCarregado.current) return;
@@ -600,10 +685,14 @@ export default function GestaoCartoes({
   }, [modalImportAberto]);
 
   const abrirModalImport = (cartaoId: string) => {
+    const cartao = cartoes.find(c => c.id === cartaoId);
     setCartaoImportId(cartaoId);
     setLinhasExtrato([]);
     setErroImport('');
     setProcessando(false);
+    setSenhaPDF(cartao?.senhaPDF || '');
+    setPrecisaSenha(false);
+    arrayBufferRef.current = null;
     setModalImportAberto(true);
   };
 
@@ -613,32 +702,29 @@ export default function GestaoCartoes({
     setErroImport('');
     setProcessando(false);
     setCartaoImportId('');
+    setSenhaPDF('');
+    setPrecisaSenha(false);
+    arrayBufferRef.current = null;
   };
 
-  const handleArquivoSelecionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const arquivo = e.target.files?.[0];
-    if (!arquivo) return;
-
-    if (!arquivo.name.toLowerCase().endsWith('.pdf')) {
-      setErroImport('Selecione um arquivo PDF válido.');
-      return;
-    }
-
+  const processarBuffer = async (buffer: ArrayBuffer, senha: string) => {
     setProcessando(true);
     setErroImport('');
     setLinhasExtrato([]);
+    setPrecisaSenha(false);
 
     try {
       const win = window as unknown as { pdfjsLib?: { getDocument: (args: unknown) => { promise: Promise<unknown> } } };
       const pdfjsLib = win.pdfjsLib;
       if (!pdfjsLib) {
         setErroImport('PDF.js não carregou ainda. Aguarde um segundo e tente novamente.');
-        setProcessando(false);
         return;
       }
 
-      const arrayBuffer = await arquivo.arrayBuffer();
-      const pdf = (await pdfjsLib.getDocument({ data: arrayBuffer }).promise) as {
+      const pdfParams: Record<string, unknown> = { data: buffer };
+      if (senha) pdfParams.password = senha;
+
+      const pdf = (await pdfjsLib.getDocument(pdfParams).promise) as {
         numPages: number;
         getPage: (p: number) => Promise<unknown>;
       };
@@ -650,27 +736,6 @@ export default function GestaoCartoes({
         };
         const conteudo = await pagina.getTextContent();
 
-        // ════════════════════════════════════════════════════════════════════
-        // FIX DEFINITIVO — Agrupamento por Y (tolerância 3px) + ordenação X
-        //
-        // O PDF.js processa itens na ordem do stream interno do PDF, que NÃO
-        // é necessariamente a ordem visual esquerda→direita, cima→baixo.
-        //
-        // Problema Riachuelo: o PDF armazena colunas separadas no stream.
-        //   Resultado antigo (stream order):
-        //     linha "19/07/25 026 HNA*OBOTICARIO"   ← só data+desc
-        //     linha "361,45"                         ← só valor original
-        //     linha "09/10"                          ← só nº parcela
-        //     linha "+ 36,14"                        ← só lançamento do mês
-        //   Resultado NOVO (Y-group + X-sort):
-        //     "19/07/25 026 HNA*OBOTICARIO 361,45 09/10 + 36,14" ← completo ✓
-        //
-        // Problema Nubank: "07 MAR" (Y=696.2) e "Shopee..." (Y=694.6) estão
-        //   1.6px separados no stream, mas em posições diferentes do stream.
-        //   Resultado antigo: linhas separadas → regex não casava.
-        //   Resultado NOVO: |696.2 - 694.6| = 1.6 ≤ 3 → mesmo grupo → X-sort
-        //   → "07 MAR Shopee *Entregabikes - Parcela 4/10 R$ 70,60" ✓
-        // ════════════════════════════════════════════════════════════════════
         interface ItemTexto { str: string; x: number; y: number }
         const grupos: { yBase: number; itens: ItemTexto[] }[] = [];
         const itens = conteudo.items as { str: string; transform: number[] }[];
@@ -681,7 +746,6 @@ export default function GestaoCartoes({
           const str = item.str;
           if (!str.trim()) continue;
 
-          // Procura grupo com yBase dentro de 3px de tolerância
           const grupo = grupos.find(g => Math.abs(g.yBase - y) <= 3);
           if (grupo) {
             grupo.itens.push({ str, x, y });
@@ -690,10 +754,8 @@ export default function GestaoCartoes({
           }
         }
 
-        // Ordena grupos de cima para baixo (Y decrescente no espaço PDF)
         grupos.sort((a, b) => b.yBase - a.yBase);
 
-        // Dentro de cada grupo, ordena da esquerda para direita (X crescente)
         for (const grupo of grupos) {
           grupo.itens.sort((a, b) => a.x - b.x);
           const linha = grupo.itens.map(i => i.str).join(' ').trim();
@@ -703,7 +765,6 @@ export default function GestaoCartoes({
 
       if (!textoCompleto.trim()) {
         setErroImport('Não foi possível extrair texto deste PDF. Talvez seja um PDF escaneado (imagem).');
-        setProcessando(false);
         return;
       }
 
@@ -711,19 +772,44 @@ export default function GestaoCartoes({
 
       if (linhasParsadas.length === 0) {
         setErroImport('Nenhuma transação encontrada. Verifique se é uma fatura de cartão com data e valor.');
-        setProcessando(false);
         return;
       }
 
       const linhasConciliadas = conciliar(linhasParsadas, faturas, transacoesPorMes, cartaoImportId);
       setLinhasExtrato(linhasConciliadas);
     } catch (err) {
-      console.error(err);
-      setErroImport('Erro ao processar o PDF. Tente novamente.');
+      const e = err as { name?: string; message?: string };
+      if (e?.name === 'PasswordException' || /password/i.test(e?.message || '')) {
+        setPrecisaSenha(true);
+        setErroImport('Este PDF está protegido por senha. Informe a senha abaixo.');
+      } else {
+        console.error(err);
+        setErroImport('Erro ao processar o PDF. Tente novamente.');
+      }
     } finally {
       setProcessando(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const handleArquivoSelecionado = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const arquivo = e.target.files?.[0];
+    if (!arquivo) return;
+
+    if (!arquivo.name.toLowerCase().endsWith('.pdf')) {
+      setErroImport('Selecione um arquivo PDF válido.');
+      return;
+    }
+
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    const buffer = await arquivo.arrayBuffer();
+    arrayBufferRef.current = buffer;
+    await processarBuffer(buffer, senhaPDF);
+  };
+
+  const handleTentarComSenha = async () => {
+    if (!arrayBufferRef.current) return;
+    await processarBuffer(arrayBufferRef.current, senhaPDF);
   };
 
   const handleLancarItem = (linha: LinhaExtrato) => {
@@ -1040,7 +1126,7 @@ export default function GestaoCartoes({
                       {processando ? 'Processando...' : 'Clique para selecionar o PDF'}
                     </div>
                     <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
-                      Fatura do cartão em PDF — Riachuelo, Bradescard/Tumelero, Bourbon/Zaffari, PicPay, Nubank e outros
+                      Fatura do cartão em PDF — Riachuelo, Bradescard, Bourbon/Zaffari, PicPay, Nubank, Banco CSF/Atacadão e outros
                     </div>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".pdf" onChange={handleArquivoSelecionado} style={{ display: 'none' }} />
@@ -1055,6 +1141,29 @@ export default function GestaoCartoes({
                   {erroImport && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '0.5rem', padding: '0.875rem', marginTop: '1rem', fontSize: '0.875rem', color: '#991b1b' }}>
                       ⚠️ {erroImport}
+                    </div>
+                  )}
+
+                  {precisaSenha && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '0.5rem', padding: '1rem', marginTop: '0.75rem' }}>
+                      <div style={{ fontSize: '0.875rem', fontWeight: '600', color: '#92400e', marginBottom: '0.5rem' }}>🔒 PDF protegido por senha</div>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <input
+                          type="password"
+                          value={senhaPDF}
+                          onChange={e => setSenhaPDF(e.target.value)}
+                          placeholder="Digite a senha do PDF"
+                          onKeyDown={e => { if (e.key === 'Enter') handleTentarComSenha(); }}
+                          style={{ flex: 1, padding: '0.5rem 0.625rem', border: '1px solid #fde68a', borderRadius: '0.375rem', fontSize: '0.875rem', outline: 'none' }}
+                        />
+                        <button
+                          onClick={handleTentarComSenha}
+                          disabled={processando || !senhaPDF}
+                          style={{ padding: '0.5rem 1rem', background: '#f59e0b', color: 'white', border: 'none', borderRadius: '0.375rem', fontSize: '0.875rem', fontWeight: '600', cursor: senhaPDF ? 'pointer' : 'not-allowed', opacity: senhaPDF ? 1 : 0.5 }}
+                        >
+                          Tentar
+                        </button>
+                      </div>
                     </div>
                   )}
 

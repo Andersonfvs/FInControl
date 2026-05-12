@@ -32,6 +32,7 @@ export interface CartaoCredito {
   diaFechamento: number;
   diaVencimento: number;
   cor: string;
+  senhaPDF?: string;
 }
 
 export interface ItemFatura {
