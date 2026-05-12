@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState, useEffect, useCallback } from 'react';
 import { CartaoCredito } from '@/types';
@@ -33,7 +33,7 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
   const [cor, setCor] = useState('#8b5cf6');
   const [senhaPDF, setSenhaPDF] = useState('');
 
-  // Sincroniza o estado toda vez que o modal abre (ou quando o cartão editado muda)
+  // Sincroniza o estado toda vez que o modal abre
   useEffect(() => {
     if (aberto) {
       setNome(cartaoEditando?.nome || '');
@@ -80,7 +80,6 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
       diaFechamento: parseInt(diaFechamento),
       diaVencimento: parseInt(diaVencimento),
       cor,
-      senhaPDF: senhaPDF.trim() || undefined,
     };
 
     onSalvar(cartao);
@@ -265,29 +264,6 @@ export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, carta
                   onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
                 />
               </div>
-            </div>
-
-            {/* Senha PDF */}
-            <div>
-              <label style={{ display: 'block', fontWeight: '600', marginBottom: '4px', fontSize: '14px', color: '#374151' }}>
-                🔒 Senha do PDF da fatura
-              </label>
-              <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '8px' }}>
-                Opcional — se a fatura vier protegida por senha, salve aqui para importar automaticamente
-              </div>
-              <input
-                type="password"
-                value={senhaPDF}
-                onChange={(e) => setSenhaPDF(e.target.value)}
-                placeholder="Ex: 12345"
-                style={{
-                  width: '100%', padding: '12px', border: '2px solid #e5e7eb',
-                  borderRadius: '8px', fontSize: '15px', boxSizing: 'border-box', outline: 'none',
-                  transition: 'border-color 0.2s',
-                }}
-                onFocus={(e) => e.target.style.borderColor = '#8b5cf6'}
-                onBlur={(e) => e.target.style.borderColor = '#e5e7eb'}
-              />
             </div>
 
             {/* Cores */}
