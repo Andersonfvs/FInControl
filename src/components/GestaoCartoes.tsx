@@ -279,16 +279,14 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
   // PicPay page 3 usa layout de 2 colunas. O pdfjs agrupa itens com o mesmo Y,
   // então transações de colunas distintas ficam na mesma "linha":
-  //   "48,78 24/11 AGROPECUARIA CPARC06/06 33,27"  ← 2 transações fundidas
+  //   "48,78 07/03 AGROPECUARIA CPARC02/10 34,99"  ← 2 transações fundidas
   //   "EVELIN S MULBAIER 11/03 AGROPET PARC02/03 52,99" ← cabeçalho + transação
   //
-  // Correção: inserir \n antes de cada data DD/MM que aparece no meio de uma linha.
-  // Regra 1 — valor numérico seguido de data → separa as duas transações
-  // Regra 2 — letra seguida de data → cabeçalho/label fundido com transação
-  // (PARC01/02 etc. não disparam pois não há espaço entre a letra e o dígito)
+  // Correção: qualquer padrão " DD/MM " (espaço/tab antes e depois) no meio de
+  // uma linha indica início de nova transação — inserimos \n antes da data.
+  // PARC01/02 NÃO dispara pois o "C" (letra) precede "01" sem espaço.
   const textoProcessado = texto
-    .replace(/([\d.,]+)\s+(\d{2}\/\d{2})\s+([A-Za-zÀ-ÿ*])/g, '$1\n$2 $3')
-    .replace(/([A-Za-zÀ-ÿ])\s+(\d{2}\/\d{2})\s+([A-Za-zÀ-ÿ*])/g,  '$1\n$2 $3');
+    .replace(/[ \t](\d{2}\/\d{2})[ \t]/g, '\n$1 ');
 
   const linhas = textoProcessado.split('\n');
 
