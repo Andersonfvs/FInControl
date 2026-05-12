@@ -518,7 +518,7 @@ function conciliar(
       if (diffValor > 0.02) return false;
       const dataItem = new Date(item.data + 'T00:00:00');
       const diffDias = Math.abs((dataItem.getTime() - dataLinha.getTime()) / 86400000);
-      return diffDias <= 3;
+      return diffDias <= 1;
     });
 
     const achouTransacao = transacoesCartao.some(t => {
@@ -526,7 +526,7 @@ function conciliar(
       if (diffValor > 0.02) return false;
       const dataT = new Date(t.data + 'T00:00:00');
       const diffDias = Math.abs((dataT.getTime() - dataLinha.getTime()) / 86400000);
-      return diffDias <= 3;
+      return diffDias <= 1;
     });
 
     return { ...linha, status: (achouFatura || achouTransacao) ? 'conciliado' : 'pendente' };
