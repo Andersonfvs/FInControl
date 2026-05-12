@@ -276,7 +276,21 @@ function isPicPay(texto: string): boolean {
 
 function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
-  const linhas = texto.split('\n');
+
+  // PicPay page 3 usa layout de 2 colunas. O pdfjs agrupa itens com o mesmo Y,
+  // então transações de colunas distintas ficam na mesma "linha":
+  //   "48,78 24/11 AGROPECUARIA CPARC06/06 33,27"  ← 2 transações fundidas
+  //   "EVELIN S MULBAIER 11/03 AGROPET PARC02/03 52,99" ← cabeçalho + transação
+  //
+  // Correção: inserir \n antes de cada data DD/MM que aparece no meio de uma linha.
+  // Regra 1 — valor numérico seguido de data → separa as duas transações
+  // Regra 2 — letra seguida de data → cabeçalho/label fundido com transação
+  // (PARC01/02 etc. não disparam pois não há espaço entre a letra e o dígito)
+  const textoProcessado = texto
+    .replace(/([\d.,]+)\s+(\d{2}\/\d{2})\s+([A-Za-zÀ-ÿ*])/g, '$1\n$2 $3')
+    .replace(/([A-Za-zÀ-ÿ])\s+(\d{2}\/\d{2})\s+([A-Za-zÀ-ÿ*])/g,  '$1\n$2 $3');
+
+  const linhas = textoProcessado.split('\n');
 
   for (const linha of linhas) {
     const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
@@ -284,7 +298,7 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
 
     const [, dataDDMM, descRaw, valorStr] = matchData;
 
-    if (/pagamento de fatura|pagamento|iof diario|iof adicional|^fin |subtotal|total geral/i.test(descRaw.trim())) continue;
+    if (/pagamento de fatura|pagamento recebido|iof diario|iof adicional|^fin |credito parcelamento|subtotal|total geral/i.test(descRaw.trim())) continue;
 
     const valor = converterValor(valorStr);
     if (isNaN(valor) || valor <= 0) continue;
