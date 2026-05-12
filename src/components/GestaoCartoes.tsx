@@ -18,6 +18,7 @@ interface Props {
   onExcluirItemFatura: (cartaoId: string, itemId: string, mesKey: string) => void;
   onEditarItemFatura: (cartaoId: string, item: ItemFatura, mesKey: string) => void;
   onLancarItensCSV?: (cartaoId: string, itens: ItemFatura[]) => void;
+  onDesfazerPagamento?: (cartaoId: string, mesKey: string) => void;
 }
 
 // ─── Tipos para importação ───────────────────────────────────────────────────
@@ -534,6 +535,7 @@ export default function GestaoCartoes({
   onExcluirItemFatura,
   onEditarItemFatura,
   onLancarItensCSV,
+  onDesfazerPagamento,
 }: Props) {
   const isMobile = useIsMobile();
   const [cartaoSelecionado, setCartaoSelecionado] = useState<string | null>(null);
@@ -959,7 +961,17 @@ export default function GestaoCartoes({
                       </div>
                     </div>
                     {estaPaga && totalFatura > 0 ? (
-                      <div style={{ background: '#d1fae5', color: '#065f46', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '600' }}>✓ Paga</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+                        <div style={{ background: '#d1fae5', color: '#065f46', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '600' }}>✓ Paga</div>
+                        {onDesfazerPagamento && (
+                          <button
+                            onClick={() => { if (confirm('Desfazer o pagamento desta fatura?')) onDesfazerPagamento(cartao.id, mesReferencia); }}
+                            title="Desfazer pagamento"
+                            style={{ background: 'none', border: '1px solid #d1d5db', borderRadius: '0.375rem', color: '#6b7280', fontSize: '0.7rem', padding: '0.25rem 0.5rem', cursor: 'pointer', lineHeight: 1 }}>
+                            ↩
+                          </button>
+                        )}
+                      </div>
                     ) : totalFatura > 0 ? (
                       <div style={{ background: '#fef2f2', color: '#991b1b', padding: '0.375rem 0.75rem', borderRadius: '0.375rem', fontSize: '0.75rem', fontWeight: '600' }}>⏳ Pendente</div>
                     ) : null}

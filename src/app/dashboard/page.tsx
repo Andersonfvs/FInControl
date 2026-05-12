@@ -358,6 +358,30 @@ export default function DashboardPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [usuario, sistema.faturas]);
 
+  const handleDesfazerPagamento = async (cartaoId: string, mesKey: string) => {
+    if (!usuario) return;
+    try {
+      // Remove a transação de pagamento gerada por handlePagarFatura
+      const transacoes = sistema.dadosPorMes[mesKey] || [];
+      const semPagamento = transacoes.filter(
+        t => !(t.cartaoId === cartaoId && t.categoria === 'Cartão de Crédito' && t.tipo === 'despesa')
+      );
+      await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), semPagamento);
+      // Marca a fatura como não paga
+      const novasFaturas = { ...sistema.faturas };
+      if (novasFaturas[mesKey]) {
+        novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
+          if (f.cartaoId !== cartaoId) return f;
+          const { dataPagamento, ...resto } = f as FaturaMensal & { dataPagamento?: string };
+          void dataPagamento;
+          return { ...resto, paga: false };
+        });
+        await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      }
+      showToast('Pagamento desfeito — fatura voltou para pendente', 'aviso');
+    } catch { showToast('Erro ao desfazer pagamento', 'erro'); }
+  };
+
   const handlePagarFatura = async (cartaoId: string, mesKey: string) => {
     if (!usuario) return;
     try {
@@ -635,6 +659,7 @@ export default function DashboardPage() {
               onExcluirItemFatura={handleExcluirItemFatura}
               onEditarItemFatura={handleEditarItemFatura}
               onLancarItensCSV={handleLancarItensCSV}
+              onDesfazerPagamento={handleDesfazerPagamento}
             />
           )}
 
