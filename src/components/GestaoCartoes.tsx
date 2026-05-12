@@ -1226,6 +1226,16 @@ export default function GestaoCartoes({
                             {lancandoId === linha.id ? '...' : '+ Lançar'}
                           </button>
                         )}
+                        {linha.status === 'conciliado' && onLancarItensCSV && (
+                          <button
+                            onClick={() => {
+                              setLinhasExtrato(prev => prev.map(l => l.id === linha.id ? { ...l, status: 'pendente' } : l));
+                            }}
+                            title="Marcar como pendente e lançar mesmo assim"
+                            style={{ padding: '0.375rem 0.5rem', background: 'none', color: '#6b7280', border: '1px solid #d1d5db', borderRadius: '0.375rem', fontSize: '0.7rem', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                            ↺
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
