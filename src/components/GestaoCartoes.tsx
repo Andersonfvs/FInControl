@@ -171,7 +171,7 @@ function parsearRiachuelo(texto: string): LinhaExtrato[] {
 // PARSER 2 — BRADESCARD / TUMELERO
 // ═══════════════════════════════════════════════════════════════════════
 function isBradescard(texto: string): boolean {
-  return /bradescard|tumelero/i.test(texto.slice(0, 2000));
+  return /bradescard|tumelero/i.test(texto);
 }
 
 function parsearBradescard(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
@@ -768,6 +768,9 @@ export default function GestaoCartoes({
         return;
       }
 
+      // DEBUG — salva o texto extraído para diagnóstico
+      (window as unknown as Record<string, unknown>).__lastPdfText = textoCompleto;
+
       const linhasParsadas = parsearTextoFatura(textoCompleto, mesReferencia);
 
       if (linhasParsadas.length === 0) {
@@ -1229,10 +1232,25 @@ export default function GestaoCartoes({
                     ))}
                   </div>
 
-                  <button onClick={() => { setLinhasExtrato([]); setErroImport(''); }}
-                    style={{ width: '100%', padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', cursor: 'pointer', marginTop: '1rem' }}>
-                    📂 Carregar outro PDF
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                    <button onClick={() => { setLinhasExtrato([]); setErroImport(''); }}
+                      style={{ flex: 1, padding: '0.625rem', background: '#f3f4f6', color: '#374151', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+                      📂 Carregar outro PDF
+                    </button>
+                    <button
+                      onClick={() => {
+                        const txt = (window as unknown as Record<string, unknown>).__lastPdfText as string | undefined;
+                        if (txt) {
+                          navigator.clipboard.writeText(txt).then(() => alert('✅ Texto copiado! Cole no chat para diagnóstico.'));
+                        } else {
+                          alert('Nenhum texto disponível.');
+                        }
+                      }}
+                      title="Copia o texto bruto extraído do PDF para diagnóstico"
+                      style={{ padding: '0.625rem 0.875rem', background: '#6b7280', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', cursor: 'pointer' }}>
+                      🔍 Diagnóstico
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

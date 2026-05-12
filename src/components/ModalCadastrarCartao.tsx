@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { CartaoCredito } from '@/types';
 import { gerarId } from '@/utils/financeiro';
 
@@ -25,22 +25,36 @@ const CORES = [
 const BANDEIRAS = ['Mastercard', 'Visa', 'Elo', 'American Express', 'Hipercard', 'Outros'];
 
 export default function ModalCadastrarCartao({ aberto, onFechar, onSalvar, cartaoEditando }: Props) {
-  const [nome, setNome] = useState(cartaoEditando?.nome || '');
-  const [bandeira, setBandeira] = useState(cartaoEditando?.bandeira || 'Mastercard');
-  const [limite, setLimite] = useState(cartaoEditando ? String(cartaoEditando.limite) : '');
-  const [diaFechamento, setDiaFechamento] = useState(cartaoEditando ? String(cartaoEditando.diaFechamento) : '');
-  const [diaVencimento, setDiaVencimento] = useState(cartaoEditando ? String(cartaoEditando.diaVencimento) : '');
-  const [cor, setCor] = useState(cartaoEditando?.cor || '#8b5cf6');
-  const [senhaPDF, setSenhaPDF] = useState(cartaoEditando?.senhaPDF || '');
+  const [nome, setNome] = useState('');
+  const [bandeira, setBandeira] = useState('Mastercard');
+  const [limite, setLimite] = useState('');
+  const [diaFechamento, setDiaFechamento] = useState('');
+  const [diaVencimento, setDiaVencimento] = useState('');
+  const [cor, setCor] = useState('#8b5cf6');
+  const [senhaPDF, setSenhaPDF] = useState('');
+
+  // Sincroniza o estado toda vez que o modal abre (ou quando o cartão editado muda)
+  useEffect(() => {
+    if (aberto) {
+      setNome(cartaoEditando?.nome || '');
+      setBandeira(cartaoEditando?.bandeira || 'Mastercard');
+      setLimite(cartaoEditando ? String(cartaoEditando.limite) : '');
+      setDiaFechamento(cartaoEditando ? String(cartaoEditando.diaFechamento) : '');
+      setDiaVencimento(cartaoEditando ? String(cartaoEditando.diaVencimento) : '');
+      setCor(cartaoEditando?.cor || '#8b5cf6');
+      setSenhaPDF(cartaoEditando?.senhaPDF || '');
+    }
+  }, [aberto, cartaoEditando]);
 
   // ESC fecha o modal
+  const handleEscCallback = useCallback((e: KeyboardEvent) => {
+    if (e.key === 'Escape') onFechar();
+  }, [onFechar]);
+
   useEffect(() => {
-    const handleEsc = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onFechar();
-    };
-    if (aberto) window.addEventListener('keydown', handleEsc);
-    return () => window.removeEventListener('keydown', handleEsc);
-  }, [aberto, onFechar]);
+    if (aberto) window.addEventListener('keydown', handleEscCallback);
+    return () => window.removeEventListener('keydown', handleEscCallback);
+  }, [aberto, handleEscCallback]);
 
   // Trava scroll do body quando modal está aberto
   useEffect(() => {
