@@ -76,13 +76,6 @@ export default function DashboardPage() {
         router.replace('/');
       }
     });
-    // Cores condicionais do shell
-  const bg = darkMode ? '#0f172a' : '#fafafa';
-  const bgCard = darkMode ? '#1e293b' : 'white';
-  const borderColor = darkMode ? '#334155' : '#e5e7eb';
-  const textPrimary = darkMode ? '#f1f5f9' : '#111827';
-  const textMuted = darkMode ? '#94a3b8' : '#6b7280';
-
   return () => unsubscribe();
   }, [router]);
 
@@ -142,13 +135,6 @@ export default function DashboardPage() {
         categoriasCustomizadas: dados.categoriasCustomizadas || [],
       });
     });
-    // Cores condicionais do shell
-  const bg = darkMode ? '#0f172a' : '#fafafa';
-  const bgCard = darkMode ? '#1e293b' : 'white';
-  const borderColor = darkMode ? '#334155' : '#e5e7eb';
-  const textPrimary = darkMode ? '#f1f5f9' : '#111827';
-  const textMuted = darkMode ? '#94a3b8' : '#6b7280';
-
   return () => unsubscribe();
   }, [usuario]);
 
@@ -492,6 +478,11 @@ export default function DashboardPage() {
               <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
                 style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
                 {isMobile ? '+ 💸' : '+ Despesa'}
+              </button>
+              <button onClick={toggleDarkMode}
+                title={darkMode ? 'Modo claro' : 'Modo escuro'}
+                style={{ padding: '0.5rem 0.625rem', background: darkMode ? '#475569' : '#f3f4f6', color: darkMode ? '#fbbf24' : '#6b7280', border: '1px solid ' + borderColor, borderRadius: '0.5rem', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>
+                {darkMode ? '☀️' : '🌙'}
               </button>
               <button onClick={async () => { await signOut(auth); router.replace('/'); }}
                 style={{ padding: isMobile ? '0.5rem 0.625rem' : '0.5rem 1rem', background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>
