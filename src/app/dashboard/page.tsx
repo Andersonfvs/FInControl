@@ -555,7 +555,16 @@ export default function DashboardPage() {
                 <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💸 Despesas</div>
                   <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: '#ef4444' }}>{formatarMoeda(resumo.totalDespesas)}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>Pago: {formatarMoeda(resumo.despesasPagas)}</div>
+                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.375rem', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '0.7rem', background: '#f0fdf4', color: '#15803d', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>
+                      ✓ {formatarMoeda(resumo.despesasPagas)}
+                    </span>
+                    {resumo.despesasPendentes > 0 && (
+                      <span style={{ fontSize: '0.7rem', background: '#fef9c3', color: '#854d0e', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>
+                        ⏳ {formatarMoeda(resumo.despesasPendentes)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 <div style={{ background: totalFaturasPendentes > 0 ? '#fff7ed' : 'white', border: `1px solid ${totalFaturasPendentes > 0 ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '0.75rem', padding: '1.25rem' }}>
                   <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💳 Fat. Pendentes</div>

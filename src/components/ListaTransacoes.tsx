@@ -119,22 +119,24 @@ export default function ListaTransacoes({
             const icone = obterIconeCategoria(transacao.categoria);
             // Campos extras via cast seguro
             const { parcelamento, dividido, notaFiscalUrl } = transacao;
+            // Pagamento de fatura de cartão — visual diferenciado
+            const isFaturaPaga = !isReceita && (transacao as unknown as Record<string, unknown>).cartaoId && transacao.categoria === 'Cartão de Crédito';
 
             return (
               <div key={`mob-${transacao.id}-${index}`} style={{
-                background: isPago && !isReceita ? '#f0fdf4' : 'white',
-                border: `1px solid ${isPago && !isReceita ? '#bbf7d0' : '#e5e7eb'}`,
+                background: isFaturaPaga ? '#eff6ff' : isPago && !isReceita ? '#f0fdf4' : 'white',
+                border: `1px solid ${isFaturaPaga ? '#bfdbfe' : isPago && !isReceita ? '#bbf7d0' : '#e5e7eb'}`,
                 borderRadius: '0.75rem', padding: '1rem', transition: 'all 0.2s',
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.375rem' }}>
                   <div style={{ fontSize: '0.8125rem', color: '#9ca3af' }}>
                     {new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' })}
                   </div>
-                  <div style={{ fontWeight: '700', fontSize: '1.0625rem', color: isReceita ? '#10b981' : isPago ? '#9ca3af' : '#ef4444', textDecoration: isPago && !isReceita ? 'line-through' : 'none' }}>
+                  <div style={{ fontWeight: '700', fontSize: '1.0625rem', color: isReceita ? '#10b981' : isFaturaPaga ? '#1d4ed8' : isPago ? '#9ca3af' : '#ef4444', textDecoration: isPago && !isReceita && !isFaturaPaga ? 'line-through' : 'none' }}>
                     {isReceita ? '+' : '-'}{formatarMoeda(transacao.valor)}
                   </div>
                 </div>
-                <div style={{ fontWeight: '600', fontSize: '0.9375rem', color: '#374151', marginBottom: '0.5rem', textDecoration: isPago && !isReceita ? 'line-through' : 'none', opacity: isPago && !isReceita ? 0.65 : 1 }}>
+                <div style={{ fontWeight: '600', fontSize: '0.9375rem', color: isFaturaPaga ? '#1e40af' : '#374151', marginBottom: '0.5rem', textDecoration: isPago && !isReceita && !isFaturaPaga ? 'line-through' : 'none', opacity: isPago && !isReceita && !isFaturaPaga ? 0.65 : 1 }}>
                   {transacao.descricao}
                 </div>
                 <div style={{ display: 'flex', gap: '0.375rem', flexWrap: 'wrap', marginBottom: '0.75rem' }}>
@@ -159,7 +161,11 @@ export default function ListaTransacoes({
                       🧾 NF-e
                     </span>
                   )}
-                  {isPago && (
+                  {isFaturaPaga ? (
+                    <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
+                      💳 Pagamento de Fatura
+                    </span>
+                  ) : isPago && (
                     <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.2rem 0.5rem', borderRadius: '0.25rem', fontSize: '0.75rem', fontWeight: '600' }}>
                       ✓ Pago
                     </span>
@@ -193,13 +199,14 @@ export default function ListaTransacoes({
             const isCarregando = carregandoId === transacao.id;
             const icone = obterIconeCategoria(transacao.categoria);
             const { parcelamento, dividido, notaFiscalUrl } = transacao;
+            const isFaturaPaga = !isReceita && (transacao as unknown as Record<string, unknown>).cartaoId && transacao.categoria === 'Cartão de Crédito';
 
             return (
               <div
                 key={`desk-${transacao.id}-${index}`}
-                style={{ padding: '0.875rem 1.5rem', borderBottom: index < transacoesOrdenadas.length - 1 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: '40px 100px 2fr 1fr 120px 130px 80px', gap: '1rem', alignItems: 'center', background: isPago && !isReceita ? '#f0fdf4' : 'white', transition: 'background 0.15s' }}
+                style={{ padding: '0.875rem 1.5rem', borderBottom: index < transacoesOrdenadas.length - 1 ? '1px solid #f3f4f6' : 'none', display: 'grid', gridTemplateColumns: '40px 100px 2fr 1fr 120px 130px 80px', gap: '1rem', alignItems: 'center', background: isFaturaPaga ? '#eff6ff' : isPago && !isReceita ? '#f0fdf4' : 'white', transition: 'background 0.15s' }}
                 onMouseEnter={e => { if (!isPago) e.currentTarget.style.background = '#f9fafb'; }}
-                onMouseLeave={e => { e.currentTarget.style.background = isPago && !isReceita ? '#f0fdf4' : 'white'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = isFaturaPaga ? '#eff6ff' : isPago && !isReceita ? '#f0fdf4' : 'white'; }}
               >
                 <div>
                   {isCarregando
@@ -210,7 +217,7 @@ export default function ListaTransacoes({
                   {new Date(transacao.data + 'T00:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' }).replace('.', '')}
                 </div>
                 <div>
-                  <div style={{ fontWeight: '600', color: '#374151', fontSize: '0.9375rem', marginBottom: '0.2rem', textDecoration: isPago && !isReceita ? 'line-through' : 'none', opacity: isPago && !isReceita ? 0.7 : 1 }}>
+                  <div style={{ fontWeight: '600', color: isFaturaPaga ? '#1e40af' : '#374151', fontSize: '0.9375rem', marginBottom: '0.2rem', textDecoration: isPago && !isReceita && !isFaturaPaga ? 'line-through' : 'none', opacity: isPago && !isReceita && !isFaturaPaga ? 0.7 : 1 }}>
                     {transacao.descricao}
                   </div>
                   <div style={{ display: 'flex', gap: '0.375rem', fontSize: '0.75rem' }}>
@@ -225,7 +232,9 @@ export default function ListaTransacoes({
                     {notaFiscalUrl && (
                       <span style={{ background: '#f0fdf4', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>🧾 NF-e</span>
                     )}
-                    {isPago && (
+                    {isFaturaPaga ? (
+                      <span style={{ background: '#dbeafe', color: '#1e40af', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>💳 Pgto Fatura</span>
+                    ) : isPago && (
                       <span style={{ background: '#d1fae5', color: '#065f46', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>✓ Pago</span>
                     )}
                   </div>
@@ -236,7 +245,7 @@ export default function ListaTransacoes({
                   </span>
                 </div>
                 <div style={{ fontSize: '0.8125rem', color: '#6b7280' }}>{transacao.pessoa.split(' ')[0]}</div>
-                <div style={{ textAlign: 'right', fontWeight: '700', fontSize: '1rem', color: isReceita ? '#10b981' : isPago ? '#9ca3af' : '#ef4444', textDecoration: isPago && !isReceita ? 'line-through' : 'none' }}>
+                <div style={{ textAlign: 'right', fontWeight: '700', fontSize: '1rem', color: isReceita ? '#10b981' : isFaturaPaga ? '#1d4ed8' : isPago ? '#9ca3af' : '#ef4444', textDecoration: isPago && !isReceita && !isFaturaPaga ? 'line-through' : 'none' }}>
                   {isReceita ? '+' : '-'}{formatarMoeda(transacao.valor)}
                 </div>
                 <div style={{ display: 'flex', gap: '0.125rem', justifyContent: 'center' }}>
