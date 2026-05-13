@@ -277,32 +277,50 @@ function isPicPay(texto: string): boolean {
 function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): LinhaExtrato[] {
   const resultado: LinhaExtrato[] = [];
 
-  // PicPay page 3 usa layout de 2 colunas. O pdfjs agrupa itens com o mesmo Y,
-  // então transações de colunas distintas ficam na mesma "linha":
-  //   "48,78 07/03 AGROPECUARIA CPARC02/10 34,99"  ← 2 transações fundidas
-  //   "EVELIN S MULBAIER 11/03 AGROPET PARC02/03 52,99" ← cabeçalho + transação
-  //
-  // Correção: qualquer padrão " DD/MM " (espaço/tab antes e depois) no meio de
-  // uma linha indica início de nova transação — inserimos \n antes da data.
-  // PARC01/02 NÃO dispara pois o "C" (letra) precede "01" sem espaço.
+  // ── Pré-processamento ──────────────────────────────────────────────────
+  // O PicPay usa layout de 2 colunas. O pdfjs agrupa texto com mesmo Y,
+  // então itens de colunas distintas ficam na mesma "linha".
+  // Problemas conhecidos:
+  //  A) "07/04 FIN PIZZARIA DPARC01/03 45,88 Picpay Card final 1026"
+  //      → "1026" capturado como valor (cabeçalho de seção na coluna direita)
+  //  B) "05/09 HNA*OBOTICARIOPARC08/10 23,64 Subtotal dos lançamentos 344,38"
+  //      → regex captura 344,38; "subtotal" na descrição → filtrado e perdido
+  //  C) "07/04 CREDITO PARCELAMENTO" separado de "COMPRA 129,00" por linha da
+  //      coluna direita → linha fica sem valor → descartada
+
   const textoProcessado = texto
+    // Remove cabeçalhos que contaminam as transações (coluna direita)
+    .replace(/Picpay\s+Card\s+final\s+\d+/gi, '')
+    .replace(/EVELIN\s+S\s+MULBAIER/gi, '')
+    .replace(/Transações\s+Nacionais/gi, '')
+    .replace(/Operações\s+de\s+crédito\s+contratados/gi, '')
+    .replace(/Picpay\s+Card\b/gi, '')
+    // Fix B: "Subtotal" e "Total geral" como ponto de quebra de linha
+    // Garante que "HNA... 23,64Subtotal..." → "HNA... 23,64" + "Subtotal..."
+    // Não exige espaço antes — pdfjs pode colar o texto sem separador
+    .replace(/(Subtotal\b)/gi, '\n$1')
+    .replace(/(Total\s+geral\b)/gi, '\n$1')
+    // Split em nova transação quando " DD/MM " aparece no meio da linha
     .replace(/[ \t](\d{2}\/\d{2})[ \t]/g, '\n$1 ');
 
-  const linhas = textoProcessado.split('\n');
+  const linhas = textoProcessado.split('\n').map(l => l.trim()).filter(Boolean);
 
   for (const linha of linhas) {
     const matchData = linha.match(/^(\d{2}\/\d{2})\s+(.+?)\s+([\d.,]+)\s*$/);
     if (!matchData) continue;
 
     const [, dataDDMM, descRaw, valorStr] = matchData;
+    const descLimpa = descRaw.trim();
 
-    if (/pagamento de fatura|pagamento recebido|iof diario|iof adicional|^fin |credito parcelamento|subtotal|total geral/i.test(descRaw.trim())) continue;
+    if (/^(pagamento de fatura|pagamento recebido|subtotal|total geral)/i.test(descLimpa)) continue;
 
-    const valor = converterValor(valorStr);
-    if (isNaN(valor) || valor <= 0) continue;
+    // CREDITO PARCELAMENTO = crédito/estorno → valor negativo
+    const isCredito = /credito parcelamento/i.test(descLimpa);
+    const valor = isCredito ? -converterValor(valorStr) : converterValor(valorStr);
+    if (isNaN(valor) || valor === 0) continue;
 
     const data = inferirAno(dataDDMM, mesRefNum, anoRefNum);
-    let descricao = descRaw.trim();
+    let descricao = descLimpa;
     let parcelas: { atual: number; total: number } | undefined;
 
     const matchParcColado = descricao.match(/PARC(\d{1,2})\/(\d{1,2})$/i);
@@ -328,6 +346,118 @@ function parsearPicPay(texto: string, mesRefNum: number, anoRefNum: number): Lin
       status: 'pendente',
     });
   }
+
+  // ── Fix B2: fallback HNA*OBOTICARIO — busca no texto RAW ──────────────
+  // O split "(Subtotal\b)" pode destruir a linha do HNA se pdfjs coloca
+  // "Subtotal" ANTES do valor: "05/09 HNA*OBOTICARIOPARC08/10 Subtotal... 23,64"
+  // → após split, linha 1 fica sem valor e é descartada.
+  // Solução: se não encontrou OBOTICARIO no parse normal, vasculha o texto
+  // original linha a linha e recupera a transação.
+  const jaTemOboticario = resultado.some(r => /oboticario/i.test(r.descricao));
+  if (!jaTemOboticario && /oboticario/i.test(texto)) {
+    for (const rawLinha of texto.split('\n')) {
+      if (!/oboticario/i.test(rawLinha)) continue;
+      // Data: busca DD/MM no início da linha ou precedido de espaço
+      const dateMatch = rawLinha.match(/(?:^|[ \t])(\d{2}\/\d{2})(?:[ \t]|$)/);
+      if (!dateMatch) continue;
+      const dataDDMM = dateMatch[1];
+      // Primeiro valor monetário (X,XX) que aparece após "OBOTICARIO"
+      const oboIdx = rawLinha.search(/oboticario/i);
+      const afterObo = rawLinha.slice(oboIdx);
+      const moneyM = afterObo.match(/\b(\d{1,3},\d{2})\b/);
+      if (!moneyM) continue;
+      const valor = converterValor(moneyM[1]);
+      if (isNaN(valor) || valor <= 0 || valor >= 1000) continue;
+      // Descrição: tudo entre a data e o primeiro valor (antes do Subtotal)
+      let desc = rawLinha.replace(/^.*?(\d{2}\/\d{2})[ \t]+/, '').trim();
+      desc = desc.replace(/\s*Subtotal.*/i, '').trim();
+      desc = desc.replace(/\s+\d{1,3},\d{2}.*$/, '').trim();
+      // Parcelamento
+      const parcM = desc.match(/PARC(\d{1,2})\/(\d{1,2})$/i);
+      let parcelas: { atual: number; total: number } | undefined;
+      if (parcM) {
+        const atual = parseInt(parcM[1]);
+        const total = parseInt(parcM[2]);
+        if (atual >= 1 && total >= 2 && atual <= total && total <= 72) parcelas = { atual, total };
+        desc = desc.replace(/PARC\d{1,2}\/\d{1,2}$/i, '').trim();
+      }
+      if (desc.length < 2) desc = 'HNA*OBOTICARIO';
+      console.log('[PicPay fallback HNA] rawLinha:', rawLinha);
+      console.log('[PicPay fallback HNA] desc:', desc, '| valor:', valor, '| data:', dataDDMM, '| parcelas:', parcelas);
+      resultado.push({
+        id: gerarId(),
+        data: inferirAno(dataDDMM, mesRefNum, anoRefNum),
+        descricao: desc,
+        valor,
+        categoria: detectarCategoriaPorDescricao(desc),
+        parcelas,
+        status: 'pendente',
+      });
+      break;
+    }
+  }
+
+  // ── Fix C: CREDITO PARCELAMENTO ────────────────────────────────────────
+  // No PDF PicPay o pdfjs extrai em 3 linhas separadas:
+  //   Linha N:   "CREDITO PARCELAMENTO"          (sem data, sem valor)
+  //   Linha N+1: "07/04 129,00 10/03 HOSPITAL…"  (data+valor misturados com coluna direita)
+  //   Linha N+2: "COMPRA"
+  // Estratégia: achar a linha "CREDITO PARCELAMENTO" e verificar as linhas
+  // vizinhas (±3) por uma linha que comece com DD/MM seguido de número.
+  const jaTemCredito = resultado.some(r => /credito parcelamento/i.test(r.descricao));
+  if (!jaTemCredito) {
+    let valorCred = 0;
+    let dataCred = `07/${String(mesRefNum).padStart(2, '0')}`;
+
+    // ── Estratégia A: busca linha a linha no texto original ──────────────
+    const rawLinhasC = texto.split('\n');
+    for (let ci = 0; ci < rawLinhasC.length; ci++) {
+      if (!/CREDITO\s+PARCELAMENTO/i.test(rawLinhasC[ci])) continue;
+      // Encontrou a linha! Agora busca data+valor nas linhas vizinhas
+      for (let cj = Math.max(0, ci - 3); cj <= Math.min(rawLinhasC.length - 1, ci + 6); cj++) {
+        if (cj === ci) continue; // pula a própria linha "CREDITO PARCELAMENTO"
+        const dm = rawLinhasC[cj].match(/^(\d{2}\/\d{2})\s+([\d.,]+)/);
+        if (dm) {
+          const v = converterValor(dm[2]);
+          if (!isNaN(v) && v > 0 && v < 2000) {
+            valorCred = v;
+            dataCred = dm[1];
+            console.log('[PicPay CREDITO-A] encontrado na linha vizinha:', rawLinhasC[cj], '| valor:', v, '| data:', dm[1]);
+            break;
+          }
+        }
+      }
+      break;
+    }
+
+    // ── Estratégia B: sumário "Créditos e estornos X,XX" da página 1 ────
+    if (valorCred === 0) {
+      const sumM = texto.match(/estornos\s*[-–—−]?\s*(\d{2,3},\d{2})/i);
+      if (sumM) {
+        valorCred = converterValor(sumM[1]);
+        console.log('[PicPay CREDITO-B] sumário estornos:', sumM[0], '| valor:', valorCred);
+      }
+    }
+
+    console.log('[PicPay CREDITO] valorCred final:', valorCred, '| dataCred:', dataCred);
+
+    if (valorCred > 0) {
+      resultado.push({
+        id: gerarId(),
+        data: inferirAno(dataCred, mesRefNum, anoRefNum),
+        descricao: 'CREDITO PARCELAMENTO',
+        valor: -valorCred,
+        categoria: 'Outros',
+        parcelas: undefined,
+        status: 'pendente',
+      });
+    }
+  }
+
+  // ── Log de diagnóstico ─────────────────────────────────────────────────
+  const totalParsed = resultado.reduce((s, r) => s + r.valor, 0);
+  console.log(`[PicPay parser] ${resultado.length} itens | total: R$${totalParsed.toFixed(2)}`);
+  console.log('[PicPay parser] itens:', resultado.map(r => `${r.data} ${r.descricao} R$${r.valor}`));
 
   return resultado;
 }
@@ -521,15 +651,10 @@ function conciliar(
       return diffDias <= 1;
     });
 
-    const achouTransacao = transacoesCartao.some(t => {
-      const diffValor = Math.abs(t.valor - linha.valor);
-      if (diffValor > 0.02) return false;
-      const dataT = new Date(t.data + 'T00:00:00');
-      const diffDias = Math.abs((dataT.getTime() - dataLinha.getTime()) / 86400000);
-      return diffDias <= 1;
-    });
-
-    return { ...linha, status: (achouFatura || achouTransacao) ? 'conciliado' : 'pendente' };
+    // Não usa achouTransacao (transações de outros meses) para conciliar —
+    // isso causava falso positivo: PARC01/10 de set/2025 conciliava PARC08/10 de mai/2026
+    // (mesma data de compra, mesmo valor). Só concilia se já está na fatura atual.
+    return { ...linha, status: achouFatura ? 'conciliado' : 'pendente' };
   });
 }
 
