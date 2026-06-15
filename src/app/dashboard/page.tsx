@@ -427,10 +427,10 @@ export default function DashboardPage() {
   };
 
   if (carregando) return (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#fafafa' }}>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000000' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid #e5e7eb', borderTop: '3px solid #06b6d4', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 1rem' }} />
-        <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>Carregando...</span>
+        <div style={{ width: '32px', height: '32px', border: '1.5px solid #2e3038', borderTop: '1.5px solid #cc9166', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 1rem' }} />
+        <span style={{ color: '#5e616e', fontSize: '13px', letterSpacing: '-0.007em' }}>Carregando...</span>
       </div>
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
@@ -467,118 +467,142 @@ export default function DashboardPage() {
     return { mes: data.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''), receitas, despesas, saldo: receitas - despesas };
   });
 
-  const px = isMobile ? '1rem' : '3rem';
+  const px = isMobile ? '1rem' : '2.5rem';
   const tabs = [
-    { id: 'dashboard', label: isMobile ? '📊' : '📊 Dashboard' },
-    { id: 'transacoes', label: isMobile ? '📋' : '📋 Transações' },
-    { id: 'categorias', label: isMobile ? '🏷️' : '🏷️ Categorias' },
-    { id: 'cartoes', label: isMobile ? '💳' : '💳 Cartões' },
-    { id: 'metas', label: isMobile ? '🎯' : '🎯 Metas' },
+    { id: 'dashboard', label: isMobile ? 'Home' : 'Dashboard' },
+    { id: 'transacoes', label: isMobile ? 'Trans.' : 'Transações' },
+    { id: 'categorias', label: isMobile ? 'Cat.' : 'Categorias' },
+    { id: 'cartoes', label: isMobile ? 'Cartões' : 'Cartões' },
+    { id: 'metas', label: 'Metas' },
   ];
 
-  // Cores condicionais do shell
-  const bg = darkMode ? '#0f172a' : '#fafafa';
-  const bgCard = darkMode ? '#1e293b' : 'white';
-  const borderColor = darkMode ? '#334155' : '#e5e7eb';
-  const textPrimary = darkMode ? '#f1f5f9' : '#111827';
-  const textMuted = darkMode ? '#94a3b8' : '#6b7280';
+  // Slash design tokens — dark mode full spec, light mode clean variant
+  const bg = darkMode ? '#000000' : '#f5f4f0';
+  const bgCard = darkMode ? '#1c1d22' : '#ffffff';
+  const bgRaised = darkMode ? '#121317' : '#f9f8f5';
+  const borderColor = darkMode ? '#2e3038' : '#e0ddd6';
+  const borderDefault = darkMode ? '#5e616e' : '#c8c5be';
+  const textPrimary = darkMode ? '#e2e3e9' : '#1a1a18';
+  const textMuted = darkMode ? '#777a88' : '#7a7a75';
+  const textFaint = darkMode ? '#5e616e' : '#9a9a95';
+  const gold = '#cc9166';
 
   return (
     <>
-      <div style={{ minHeight: '100vh', background: bg, fontFamily: 'Inter, sans-serif' }}>
-        <header style={{ background: bgCard, borderBottom: `1px solid ${borderColor}`, padding: `0.75rem ${px}`, position: 'sticky', top: 0, zIndex: 100 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1400px', margin: '0 auto' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-              <div style={{ fontSize: isMobile ? '1.125rem' : '1.5rem', fontWeight: '700' }}>💎 {!isMobile && 'FinControl'}</div>
-              <div style={{ padding: '0.25rem 0.625rem', background: '#f3f4f6', borderRadius: '0.5rem', fontSize: '0.8125rem', color: '#6b7280' }}>
-                {isMobile ? usuario.nome.split(' ')[0] : usuario.nome}
+      <div style={{ minHeight: '100vh', background: bg, fontFamily: "'Inter', -apple-system, system-ui, sans-serif" }}>
+        <header style={{ background: bg, borderBottom: `1px solid ${borderColor}`, padding: `0 ${px}`, height: '52px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: '1400px', margin: '0 auto', width: '100%' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '0' : '28px' }}>
+              <div style={{ fontSize: '15px', fontWeight: 600, color: textPrimary, letterSpacing: '-0.007em' }}>
+                Fin<span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontStyle: 'italic', fontWeight: 400, color: gold }}>Control</span>
               </div>
+              {!isMobile && (
+                <nav style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                  {tabs.map(tab => (
+                    <button key={tab.id} onClick={() => setTabAtiva(tab.id)}
+                      style={{ padding: '6px 14px', background: 'transparent', border: 'none', borderBottom: tabAtiva === tab.id ? `2px solid ${gold}` : '2px solid transparent', color: tabAtiva === tab.id ? textPrimary : textMuted, fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em', whiteSpace: 'nowrap', height: '52px', transition: 'color 0.15s' }}>
+                      {tab.label}
+                    </button>
+                  ))}
+                </nav>
+              )}
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {!isMobile && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px 5px 5px', background: bgRaised, borderRadius: '2px', border: `1px solid ${borderColor}` }}>
+                  <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: gold + '20', border: `1px solid ${gold}40`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, color: gold }}>
+                    {usuario.nome.split(' ').map((n: string) => n[0]).slice(0, 2).join('')}
+                  </div>
+                  <span style={{ fontSize: '13px', color: textMuted, letterSpacing: '-0.007em' }}>{usuario.nome.split(' ')[0]}</span>
+                </div>
+              )}
               <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalReceitaAberto(true); }}
-                style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#10b981', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
-                {isMobile ? '+ 💰' : '+ Receita'}
+                style={{ padding: '6px 14px', background: 'transparent', color: textPrimary, border: `1px solid ${borderDefault}`, borderRadius: '2px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                {isMobile ? '+ Rec.' : '+ Receita'}
               </button>
               <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
-                style={{ padding: isMobile ? '0.5rem 0.75rem' : '0.5rem 1rem', background: '#ef4444', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '600', cursor: 'pointer' }}>
-                {isMobile ? '+ 💸' : '+ Despesa'}
+                style={{ padding: '6px 14px', background: '#ffffff', color: '#08080a', border: '1px solid #ffffff', borderRadius: '2px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                {isMobile ? '+ Desp.' : '+ Despesa'}
               </button>
-              <button onClick={toggleDarkMode}
-                title={darkMode ? 'Modo claro' : 'Modo escuro'}
-                style={{ padding: '0.5rem 0.625rem', background: darkMode ? '#475569' : '#f3f4f6', color: darkMode ? '#fbbf24' : '#6b7280', border: '1px solid ' + borderColor, borderRadius: '0.5rem', fontSize: '1rem', cursor: 'pointer', lineHeight: 1 }}>
-                {darkMode ? '☀️' : '🌙'}
+              <button onClick={toggleDarkMode} title={darkMode ? 'Modo claro' : 'Modo escuro'}
+                style={{ width: '32px', height: '32px', padding: '0', background: 'transparent', color: textFaint, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {darkMode ? '○' : '●'}
               </button>
               <button onClick={async () => { await signOut(auth); router.replace('/'); }}
-                style={{ padding: isMobile ? '0.5rem 0.625rem' : '0.5rem 1rem', background: '#f3f4f6', color: '#6b7280', border: 'none', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer' }}>
-                {isMobile ? '↩' : 'Sair'}
+                style={{ padding: '6px 12px', background: 'transparent', color: textMuted, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '13px', fontWeight: 400, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                Sair
               </button>
             </div>
           </div>
         </header>
 
-        <div style={{ background: 'white', borderBottom: '1px solid #e5e7eb', padding: `0 ${px}`, overflowX: 'auto' }}>
-          <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', gap: isMobile ? '0' : '0.5rem', minWidth: 'max-content' }}>
-            {tabs.map(tab => (
-              <button key={tab.id} onClick={() => setTabAtiva(tab.id)}
-                style={{ padding: isMobile ? '0.875rem 1.125rem' : '0.75rem 1rem', background: 'transparent', border: 'none', borderBottom: tabAtiva === tab.id ? '2px solid #06b6d4' : '2px solid transparent', color: tabAtiva === tab.id ? '#06b6d4' : '#6b7280', fontSize: isMobile ? '1.125rem' : '0.875rem', fontWeight: '500', cursor: 'pointer', transition: 'all 0.2s', whiteSpace: 'nowrap' }}>
-                {tab.label}
-              </button>
-            ))}
+        {isMobile && (
+          <div style={{ background: bg, borderBottom: `1px solid ${borderColor}`, padding: `0 ${px}`, overflowX: 'auto' }}>
+            <div style={{ display: 'flex', minWidth: 'max-content' }}>
+              {tabs.map(tab => (
+                <button key={tab.id} onClick={() => setTabAtiva(tab.id)}
+                  style={{ padding: '12px 14px', background: 'transparent', border: 'none', borderBottom: tabAtiva === tab.id ? `2px solid ${gold}` : '2px solid transparent', color: tabAtiva === tab.id ? textPrimary : textMuted, fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em', whiteSpace: 'nowrap' }}>
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         <main style={{ padding: `1.5rem ${px}`, maxWidth: '1400px', margin: '0 auto' }}>
-          <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={filtro} onChange={e => setFiltro(e.target.value)}
-              style={{ padding: '0.5rem 0.75rem', borderRadius: '0.5rem', border: '1px solid #e5e7eb', fontSize: '0.875rem', background: 'white' }}>
-              <option value="todos">👥 Todos</option>
+              style={{ padding: '5px 10px', borderRadius: '2px', border: `1px solid ${borderColor}`, fontSize: '12px', background: bgRaised, color: textMuted, fontFamily: "'Inter', sans-serif", letterSpacing: '-0.007em' }}>
+              <option value="todos">Todos</option>
               <option value="anderson ferreira">Anderson</option>
               <option value="evelin mulbaier">Evelin</option>
             </select>
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() - 1); setDataReferencia(n); }} style={{ padding: '0.5rem 0.75rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '1rem' }}>←</button>
-              <span style={{ fontSize: '0.875rem', fontWeight: '600', minWidth: isMobile ? '100px' : '120px', textAlign: 'center' }}>
-                {isMobile ? `${String(dataReferencia.getMonth() + 1).padStart(2, '0')}/${dataReferencia.getFullYear()}` : `${obterNomeMes(dataReferencia)}/${dataReferencia.getFullYear()}`}
+            <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${borderColor}`, borderRadius: '2px', overflow: 'hidden' }}>
+              <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() - 1); setDataReferencia(n); }}
+                style={{ width: '28px', height: '28px', background: bgRaised, border: 'none', borderRight: `1px solid ${borderColor}`, color: textFaint, cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>‹</button>
+              <span style={{ padding: '0 14px', height: '28px', display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 500, color: textPrimary, background: bgRaised, letterSpacing: '-0.007em', minWidth: isMobile ? '90px' : '120px', justifyContent: 'center', whiteSpace: 'nowrap' }}>
+                {isMobile ? `${String(dataReferencia.getMonth() + 1).padStart(2, '0')}/${dataReferencia.getFullYear()}` : `${obterNomeMes(dataReferencia)} ${dataReferencia.getFullYear()}`}
               </span>
-              <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() + 1); setDataReferencia(n); }} style={{ padding: '0.5rem 0.75rem', background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.375rem', cursor: 'pointer', fontSize: '1rem' }}>→</button>
+              <button onClick={() => { const n = new Date(dataReferencia); n.setMonth(n.getMonth() + 1); setDataReferencia(n); }}
+                style={{ width: '28px', height: '28px', background: bgRaised, border: 'none', borderLeft: `1px solid ${borderColor}`, color: textFaint, cursor: 'pointer', fontSize: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>›</button>
             </div>
           </div>
         
           {tabAtiva === 'dashboard' && ( 
             <div>
               <MelhorCartao cartoes={sistema.cartoes} />
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '1rem', marginBottom: '1.5rem' }}>
-                <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💰 Receitas</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: '#10b981' }}>{formatarMoeda(resumo.totalReceitas)}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '10px', marginBottom: '1.5rem' }}>
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Receitas</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalReceitas)}</div>
                 </div>
-                <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💸 Despesas</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: '#ef4444' }}>{formatarMoeda(resumo.totalDespesas)}</div>
-                  <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.375rem', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '0.7rem', background: '#f0fdf4', color: '#15803d', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>
-                      ✓ {formatarMoeda(resumo.despesasPagas)}
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Despesas</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: gold, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalDespesas)}</div>
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: textFaint, letterSpacing: '-0.007em' }}>
+                      pago {formatarMoeda(resumo.despesasPagas)}
                     </span>
                     {resumo.despesasPendentes > 0 && (
-                      <span style={{ fontSize: '0.7rem', background: '#fef9c3', color: '#854d0e', padding: '0.1rem 0.4rem', borderRadius: '0.25rem', fontWeight: '600' }}>
-                        ⏳ {formatarMoeda(resumo.despesasPendentes)}
+                      <span style={{ fontSize: '11px', color: textMuted, letterSpacing: '-0.007em' }}>
+                        · pend. {formatarMoeda(resumo.despesasPendentes)}
                       </span>
                     )}
                   </div>
                 </div>
-                <div style={{ background: totalFaturasPendentes > 0 ? '#fff7ed' : 'white', border: `1px solid ${totalFaturasPendentes > 0 ? '#fed7aa' : '#e5e7eb'}`, borderRadius: '0.75rem', padding: '1.25rem' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.375rem' }}>💳 Fat. Pendentes</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700', color: totalFaturasPendentes > 0 ? '#ea580c' : '#374151' }}>{formatarMoeda(totalFaturasPendentes)}</div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>{totalFaturasPendentes > 0 ? 'A pagar' : 'Tudo em dia ✓'}</div>
+                <div style={{ background: bgCard, border: `1px solid ${totalFaturasPendentes > 0 ? gold + '40' : borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Fat. Pendentes</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: totalFaturasPendentes > 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(totalFaturasPendentes)}</div>
+                  <div style={{ fontSize: '11px', color: textFaint, marginTop: '6px' }}>{totalFaturasPendentes > 0 ? 'a pagar' : 'em dia'}</div>
                 </div>
-                <div style={{ background: resumo.saldoDisponivel >= 0 ? '#10b981' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white' }}>
-                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '0.375rem' }}>💵 Disponível</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
-                  {totalFaturasPendentes > 0 && <div style={{ fontSize: '0.7rem', opacity: 0.85, marginTop: '0.25rem' }}>-{formatarMoeda(totalFaturasPendentes)} faturas</div>}
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Disponível</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: resumo.saldoDisponivel < 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
+                  {totalFaturasPendentes > 0 && <div style={{ fontSize: '11px', color: textFaint, marginTop: '6px' }}>-{formatarMoeda(totalFaturasPendentes)} faturas</div>}
                 </div>
-                <div style={{ background: saldoVale >= 0 ? '#8b5cf6' : '#ef4444', borderRadius: '0.75rem', padding: '1.25rem', color: 'white', gridColumn: isMobile ? 'span 2' : 'auto' }}>
-                  <div style={{ fontSize: '0.8rem', opacity: 0.9, marginBottom: '0.375rem' }}>🎫 Vale Alimentação</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: '700' }}>{formatarMoeda(saldoVale)}</div>
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px', gridColumn: isMobile ? 'span 2' : 'auto' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Vale Alimentação</div>
+                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(saldoVale)}</div>
                 </div>
               </div>
 
@@ -610,22 +634,20 @@ export default function DashboardPage() {
 
               <ReservaEmergencia reserva={sistema.reservaEmergencia} onSalvar={handleSalvarReserva} />
                 <CustoKm dadosPorMes={sistema.dadosPorMes} />
-              <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1.25rem' }}>
-                <h3 style={{ fontSize: '1rem', fontWeight: '600', marginBottom: '1rem', color: '#374151' }}>Top 5 Maiores Gastos do Mês</h3>
+              <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '20px 24px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '16px' }}>Maiores gastos do mês</div>
                 {transacoes.filter(t => t.tipo === 'despesa').sort((a, b) => b.valor - a.valor).slice(0, 5).map((t, i) => (
-                  <div key={`gasto-${t.id}-${i}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0.875rem 0', borderBottom: i < 4 ? '1px solid #f3f4f6' : 'none' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 0 }}>
-                      <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: '#fef2f2', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8125rem', fontWeight: '700', flexShrink: 0 }}>{i + 1}</div>
-                      <div style={{ minWidth: 0 }}>
-                        <div style={{ fontWeight: '600', color: '#374151', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.descricao}</div>
-                        <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{t.categoria}</div>
-                      </div>
+                  <div key={`gasto-${t.id}-${i}`} style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '11px 0', borderBottom: i < 4 ? `1px solid ${bgRaised}` : 'none' }}>
+                    <div style={{ width: '20px', height: '20px', borderRadius: '50%', background: bgRaised, color: gold, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', fontWeight: 600, flexShrink: 0, border: `1px solid ${borderColor}` }}>{i + 1}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, color: textPrimary, fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', letterSpacing: '-0.007em' }}>{t.descricao}</div>
+                      <div style={{ fontSize: '11px', color: textFaint, marginTop: '1px', letterSpacing: '-0.007em' }}>{t.categoria}</div>
                     </div>
-                    <div style={{ fontWeight: '700', fontSize: '0.9375rem', color: '#ef4444', flexShrink: 0, marginLeft: '0.5rem' }}>{formatarMoeda(t.valor)}</div>
+                    <div style={{ fontWeight: 500, fontSize: '14px', color: gold, flexShrink: 0, fontVariantNumeric: 'tabular-nums', letterSpacing: '-0.007em' }}>{formatarMoeda(t.valor)}</div>
                   </div>
                 ))}
                 {transacoes.filter(t => t.tipo === 'despesa').length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: '#6b7280', fontSize: '0.875rem' }}>Nenhuma despesa neste mês</div>
+                  <div style={{ textAlign: 'center', padding: '2rem', color: textFaint, fontSize: '13px' }}>Nenhuma despesa neste mês</div>
                 )}
               </div>
             </div>
@@ -673,10 +695,9 @@ export default function DashboardPage() {
           )}
 
           {!['dashboard', 'transacoes', 'categorias', 'cartoes'].includes(tabAtiva) && (
-            <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '3rem', textAlign: 'center' }}>
-              <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🚧</div>
-              <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>Em desenvolvimento</h3>
-              <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Este módulo será adicionado em breve!</p>
+            <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '3rem', textAlign: 'center' }}>
+              <div style={{ fontSize: '13px', fontWeight: 500, color: textFaint, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px' }}>Em desenvolvimento</div>
+              <p style={{ color: textMuted, fontSize: '13px', letterSpacing: '-0.007em' }}>Este módulo será adicionado em breve.</p>
             </div>
           )}
         </main>
