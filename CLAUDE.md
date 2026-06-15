@@ -5,9 +5,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## ⚠️ REGRA OBRIGATÓRIA — LEIA PRIMEIRO
 
 **Antes de qualquer tarefa neste projeto:**
-1. Leia `CONTEXTO_PROJETO.md` na raiz do projeto
-2. Use esse arquivo como mapa da estrutura — NÃO faça scan de toda a pasta `/src`
-3. Só abra arquivos específicos que forem necessários para a tarefa pedida
+1. Leia `CONTEXTO_PROJETO.md` na raiz do projeto — mapa de todos os módulos
+2. Leia `SESSOES_E_PROGRESSO.md` no Obsidian (`Fin Control Brain/Fin Control/`) — histórico completo de sessões, quirks e arquivos críticos
+3. Use esses arquivos como mapa — NÃO faça scan de toda a pasta `/src`
+4. Só abra arquivos específicos que forem necessários para a tarefa pedida
 
 ## Project Overview
 
