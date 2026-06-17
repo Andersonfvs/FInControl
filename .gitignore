@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# claude code tooling (worktrees, settings locais)
+/.claude/
+
+# firebase deploy cache
+/.firebase/
+
+# artefatos locais
+.graphify_python
+ruvector.db
+firebase-debug.log
