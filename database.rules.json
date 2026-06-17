@@ -1,0 +1,20 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "usuarios": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid"
+      }
+    },
+
+    "discordVinculos": {
+      ".read": false,
+      "$discordId": {
+        ".write": "auth != null && !data.exists() && newData.val() === auth.uid"
+      }
+    }
+  }
+}
