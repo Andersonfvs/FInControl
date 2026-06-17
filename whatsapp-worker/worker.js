@@ -1,29 +1,24 @@
 /**
- * FinControl — Worker do Discord (canal oficial de lançamento)
+ * FinControl — Worker do Discord (canal oficial)
  *
  * Discord: POST /discord  (interactions endpoint, slash command /add)
- * Fluxo: /add <texto> → parseia → grava no Firebase (REST) → responde embed (privado).
  *
- * Variáveis (wrangler.jsonc / painel Cloudflare):
- *   DISCORD_PUBLIC_KEY, DISCORD_APP_ID   — Discord (públicos)
- *   FIREBASE_SECRET                      — Firebase REST (secret, acesso total)
+ * SEGURANÇA (B2C):
+ *  - Autenticação no Firebase via Google Service Account (OAuth2), não mais
+ *    o database secret legado. Secret: GCP_SERVICE_ACCOUNT (JSON da conta).
+ *  - Autorização DINÂMICA: lê `discordVinculos/{discordId}` → uid (sem hardcode).
+ *  - Escrita de transações ATÔMICA (PATCH em dadosPorMes/{mes}/{id}), sem race.
+ *
+ * Variáveis (wrangler.jsonc): DISCORD_PUBLIC_KEY, DISCORD_APP_ID
+ * Secret (painel): GCP_SERVICE_ACCOUNT
  */
 
 const FIREBASE_DB = 'https://nossas-contas-ed340-v2-default-rtdb.firebaseio.com';
-const GOLD = 0xcc9166;
-const RED = 0xc0392b;
-const MAX_INPUT = 200; // limite de tamanho do lançamento (anti-abuso)
-
-// Discord: ID do usuário → UID do Firebase. Bot revela o ID se não-autorizado.
-const PESSOAS_DISCORD = [
-  { discordId: '1182096672050905129', uid: 'KH17mEyb6LQgRZztktRecPpvgT83', nome: 'Anderson Ferreira' },
-  // { discordId: '...', uid: 'q9jbIxoA5Oh6IIuUPfi5K8PGFbD3', nome: 'Evelin Mulbaier' },
-];
+const GOLD = 0xcc9166, RED = 0xc0392b, MAX_INPUT = 200;
 
 // ─────────────────────────────────────────────────────────────
 // PARSER — cópia de parsearInputMagico (src/utils/categorias.ts)
 // ─────────────────────────────────────────────────────────────
-
 const MAPA_CATEGORIAS_PALAVRAS = [
   { palavras: ['lanche','comida','pizza','hamburguer','almoço','almoco','jantar','cafe','ifood','delivery','restaurante','mercadao','mc','mcdonalds','burguer','rancho','hortifruti','padaria','açougue','acougue','churrasco','sushi','lanchonete','sorveteria','brigadeiro'], categoria: 'Alimentação' },
   { palavras: ['onibus','ônibus','uber','taxi','combustivel','gasolina','transporte','metro','passagem','99','etanol','posto','shell','ipiranga','br dist','estacionamento','pedagio','pedágio','bicicleta','patinete','moto'], categoria: 'Transporte' },
@@ -41,7 +36,6 @@ const MAPA_CATEGORIAS_PALAVRAS = [
   { palavras: ['beleza','cabelo','salao','manicure','pedicure','estetica','barbearia','depilacao','maquiagem','perfume'], categoria: 'Outras Despesas' },
   { palavras: ['manutencao','manutenção','mecanico','mecânico','revisao','revisão','troca de oleo','oleo','pneu','freio','bateria','filtro','correia','funilaria','borracharia','alinhamento','balanceamento'], categoria: 'Manutenção Veículo' },
 ];
-
 const CARTOES_CONHECIDOS = { nubank:'Nubank', nu:'Nubank', inter:'Inter', c6:'C6 Bank', itau:'Itaú', 'itaú':'Itaú', bradesco:'Bradesco', santander:'Santander', caixa:'Caixa', bb:'Banco do Brasil', sicoob:'Sicoob', sicredi:'Sicredi' };
 
 function buscarCartaoPorNome(resto, cartoes) {
@@ -168,71 +162,125 @@ function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// FIREBASE (REST) + HELPERS
+// HELPERS
 // ─────────────────────────────────────────────────────────────
-
+const comoArray = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
 function gerarMesKey(data) { return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}`; }
 function gerarId() { return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; }
 function formatarMoeda(valor) { return 'R$ ' + valor.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
-const comoArray = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
 
-async function fbGet(path, secret) {
-  const r = await fetch(`${FIREBASE_DB}/${path}.json?auth=${encodeURIComponent(secret)}`);
+// ─────────────────────────────────────────────────────────────
+// AUTH — Service Account → OAuth2 access token (cacheado em memória)
+// ─────────────────────────────────────────────────────────────
+let _tok = { v: null, exp: 0 };
+function b64url(bytes) {
+  const a = bytes instanceof ArrayBuffer ? new Uint8Array(bytes) : bytes;
+  let s = ''; for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function strB64url(str) {
+  return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+async function importarChave(pem) {
+  const corpo = pem.replace(/-----BEGIN PRIVATE KEY-----/, '').replace(/-----END PRIVATE KEY-----/, '').replace(/\\n/g, '').replace(/\s+/g, '');
+  const der = Uint8Array.from(atob(corpo), c => c.charCodeAt(0));
+  return crypto.subtle.importKey('pkcs8', der.buffer, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+}
+async function getToken(env) {
+  const agora = Math.floor(Date.now() / 1000);
+  if (_tok.v && _tok.exp - 60 > agora) return _tok.v;
+  const sa = JSON.parse(env.GCP_SERVICE_ACCOUNT);
+  const header = strB64url(JSON.stringify({ alg: 'RS256', typ: 'JWT' }));
+  const claims = strB64url(JSON.stringify({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/firebase.database https://www.googleapis.com/auth/userinfo.email',
+    aud: 'https://oauth2.googleapis.com/token', iat: agora, exp: agora + 3600,
+  }));
+  const unsigned = `${header}.${claims}`;
+  const chave = await importarChave(sa.private_key);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', chave, new TextEncoder().encode(unsigned));
+  const jwt = `${unsigned}.${b64url(sig)}`;
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=${jwt}`,
+  });
+  if (!r.ok) throw new Error('oauth ' + r.status);
+  const d = await r.json();
+  _tok = { v: d.access_token, exp: agora + (d.expires_in || 3600) };
+  return _tok.v;
+}
+
+// ─── Firebase REST com Bearer (admin) ───
+async function fbGet(path, token) {
+  const r = await fetch(`${FIREBASE_DB}/${path}.json`, { headers: { Authorization: `Bearer ${token}` } });
   if (!r.ok) throw new Error('fbGet ' + r.status);
   return r.json();
 }
-async function fbPut(path, secret, data) {
-  const r = await fetch(`${FIREBASE_DB}/${path}.json?auth=${encodeURIComponent(secret)}`, {
-    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+async function fbPut(path, token, data) {
+  const r = await fetch(`${FIREBASE_DB}/${path}.json`, {
+    method: 'PUT', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   });
   if (!r.ok) throw new Error('fbPut ' + r.status);
   return r;
 }
+async function fbPatch(path, token, updates) {
+  const r = await fetch(`${FIREBASE_DB}/${path}.json`, {
+    method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(updates),
+  });
+  if (!r.ok) throw new Error('fbPatch ' + r.status);
+  return r;
+}
 
-// Parseia, grava (read-modify-write) e devolve um resultado estruturado pro embed.
-async function registrar(env, uid, nome, textoEntrada) {
+// ─── Autorização dinâmica (sem IDs hardcoded) ───
+async function acharUidPorDiscord(discordId, token) {
+  const uid = await fbGet(`discordVinculos/${discordId}`, token).catch(() => null);
+  return (typeof uid === 'string' && uid) ? uid : null;
+}
+async function nomeDoUsuario(uid, token) {
+  const perfil = await fbGet(`usuarios/${uid}/perfil`, token).catch(() => null);
+  return (perfil && typeof perfil.nome === 'string') ? perfil.nome : 'Você';
+}
+
+// ─── Parseia e grava (transação = atômica; fatura = formato atual) ───
+async function registrar(token, uid, nome, textoEntrada) {
   const [cartoes, categoriasCustom] = await Promise.all([
-    fbGet(`usuarios/${uid}/cartoes`, env.FIREBASE_SECRET).catch(() => null),
-    fbGet(`usuarios/${uid}/categoriasCustomizadas`, env.FIREBASE_SECRET).catch(() => null),
+    fbGet(`usuarios/${uid}/cartoes`, token).catch(() => null),
+    fbGet(`usuarios/${uid}/categoriasCustomizadas`, token).catch(() => null),
   ]);
-
   const dados = parsearInputMagico(textoEntrada, nome, comoArray(cartoes) || undefined, comoArray(categoriasCustom) || undefined);
-  if (!dados) {
-    return { erro: true, titulo: '🤔 Não entendi', descricao: 'Manda algo como:\n`150 mercado`\n`nubank 200 gasolina`\n`300 farmacia 3x`' };
-  }
+  if (!dados) return { erro: true, titulo: '🤔 Não entendi', descricao: 'Manda algo como:\n`150 mercado`\n`nubank 200 gasolina`\n`300 farmacia 3x`' };
 
-  // ── Crédito → fatura (parcelado espalha pelos meses) ──
+  // CRÉDITO → fatura (formato atual, mantém totalFatura pro app renderizar certo)
   if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
     const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
     const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
     const faturasPath = `usuarios/${uid}/faturas`;
-    const faturasAtual = await fbGet(faturasPath, env.FIREBASE_SECRET).catch(() => null);
+    const faturasAtual = await fbGet(faturasPath, token).catch(() => null);
     const faturas = (faturasAtual && typeof faturasAtual === 'object') ? faturasAtual : {};
     const meses = [];
     for (let i = 0; i < totalParcelas; i++) {
       const dataBase = new Date(dados.data + 'T00:00:00');
       dataBase.setMonth(dataBase.getMonth() + i);
-      const mesFatura = gerarMesKey(dataBase);
-      meses.push(mesFatura);
+      const mes = gerarMesKey(dataBase);
+      meses.push(mes);
       const item = {
         id: gerarId(), cartaoId: dados.cartaoId, data: dataBase.toISOString().split('T')[0],
         descricao: dados.descricao, valor: valorParcela, categoria: dados.categoria,
         pessoa: dados.pessoa, parcelas: totalParcelas, parcelaAtual: i + 1,
       };
       if (totalParcelas > 1) item.parcelamento = { parcelaAtual: i + 1, totalParcelas };
-      const listaMes = comoArray(faturas[mesFatura]);
-      faturas[mesFatura] = listaMes;
+      const listaMes = comoArray(faturas[mes]);
+      faturas[mes] = listaMes;
       const existente = listaMes.find(f => f && f.cartaoId === dados.cartaoId);
       if (existente) {
         existente.itens = comoArray(existente.itens);
         existente.itens.push(item);
         existente.totalFatura = existente.itens.reduce((s, it) => s + it.valor, 0);
       } else {
-        listaMes.push({ cartaoId: dados.cartaoId, mesReferencia: mesFatura, itens: [item], totalFatura: valorParcela, paga: false });
+        listaMes.push({ cartaoId: dados.cartaoId, mesReferencia: mes, itens: [item], totalFatura: valorParcela, paga: false });
       }
     }
-    await fbPut(faturasPath, env.FIREBASE_SECRET, faturas);
-
+    await fbPut(faturasPath, token, faturas);
     let descricao = `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}`;
     descricao += totalParcelas > 1
       ? `\n${totalParcelas}x de ${formatarMoeda(valorParcela)} · faturas ${meses[0]} → ${meses[meses.length - 1]}`
@@ -240,22 +288,19 @@ async function registrar(env, uid, nome, textoEntrada) {
     return { titulo: `💳 ${dados.cartaoNome || 'Cartão'}`, descricao };
   }
 
-  // ── Mencionou cartão mas não achei qual ──
   if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
     return { erro: true, titulo: '❌ Cartão não encontrado', descricao: 'Cadastre o cartão no app, ou escreva o nome certo.\nEx: `nubank 150 gasolina`' };
   }
 
-  // ── Dinheiro / débito / receita → dadosPorMes ──
+  // DINHEIRO / DÉBITO / RECEITA → ATÔMICO (PATCH só o id novo, sem race)
+  const id = gerarId();
   const transacao = {
-    id: gerarId(), data: dados.data, categoria: dados.categoria, descricao: dados.descricao,
+    id, data: dados.data, categoria: dados.categoria, descricao: dados.descricao,
     valor: dados.valor, pessoa: dados.pessoa, tipo: dados.tipo, pago: dados.pago,
   };
   if (dados.quilometragem) transacao.quilometragem = dados.quilometragem;
   const mesKey = gerarMesKey(new Date(dados.data + 'T12:00:00'));
-  const path = `usuarios/${uid}/dadosPorMes/${mesKey}`;
-  const lista = comoArray(await fbGet(path, env.FIREBASE_SECRET).catch(() => null));
-  lista.push(transacao);
-  await fbPut(path, env.FIREBASE_SECRET, lista);
+  await fbPatch(`usuarios/${uid}/dadosPorMes/${mesKey}`, token, { [id]: transacao });
 
   return {
     titulo: dados.tipo === 'renda' ? '💰 Receita registrada' : '✅ Despesa registrada',
@@ -267,10 +312,7 @@ function montarEmbed(res) {
   return { color: res.erro ? RED : GOLD, title: res.titulo, description: res.descricao, footer: { text: 'FinControl' } };
 }
 
-// ─────────────────────────────────────────────────────────────
-// DISCORD — verificação Ed25519 + roteamento
-// ─────────────────────────────────────────────────────────────
-
+// ─── Discord: verificação Ed25519 ───
 function hexToBytes(hex) {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
@@ -292,46 +334,46 @@ const ephem = (content) => jsonResp({ type: 4, data: { content, flags: 64 } });
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-
     if (url.pathname === '/discord' && request.method === 'POST') {
       const raw = await request.text();
       if (!(await verificarDiscord(request, raw, env.DISCORD_PUBLIC_KEY))) {
         return new Response('invalid request signature', { status: 401 });
       }
-
       let interaction;
       try { interaction = JSON.parse(raw); } catch { return new Response('bad request', { status: 400 }); }
+      if (interaction.type === 1) return jsonResp({ type: 1 });
 
-      if (interaction.type === 1) return jsonResp({ type: 1 }); // PING → PONG
-
-      if (interaction.type === 2) { // slash command
-        const userId = interaction.member?.user?.id || interaction.user?.id;
-        const pessoa = PESSOAS_DISCORD.find(p => p.discordId === userId);
-        if (!pessoa) {
-          return ephem(`👋 Seu ID do Discord é \`${userId}\`.\nPasse esse ID pro admin autorizar você no FinControl.`);
-        }
-
+      if (interaction.type === 2) {
+        const discordId = interaction.member?.user?.id || interaction.user?.id;
         const texto = (interaction.data?.options?.[0]?.value || '').trim();
         if (!texto) return ephem('Escreva o lançamento. Ex: `/add 150 mercado`');
-        if (texto.length > MAX_INPUT) return ephem(`Texto muito longo (máx ${MAX_INPUT} caracteres).`);
+        if (texto.length > MAX_INPUT) return ephem(`Texto muito longo (máx ${MAX_INPUT}).`);
 
-        // Discord exige resposta em 3s → defere (privado) e termina o trabalho em background.
         ctx.waitUntil((async () => {
           let res;
-          try { res = await registrar(env, pessoa.uid, pessoa.nome, texto); }
-          catch (e) { console.error('registrar falhou:', e.message); res = { erro: true, titulo: '⚠️ Erro ao registrar', descricao: 'Tenta de novo daqui a pouco.' }; }
+          try {
+            const token = await getToken(env);
+            const uid = await acharUidPorDiscord(discordId, token);
+            if (!uid) {
+              res = { erro: true, titulo: '🔗 Conta não vinculada', descricao: `Vincule seu Discord no app FinControl.\nSeu ID: \`${discordId}\`` };
+            } else {
+              const nome = await nomeDoUsuario(uid, token);
+              res = await registrar(token, uid, nome, texto);
+            }
+          } catch (e) {
+            console.error('falhou:', e.message);
+            res = { erro: true, titulo: '⚠️ Erro ao registrar', descricao: 'Tenta de novo daqui a pouco.' };
+          }
           await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${interaction.token}/messages/@original`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ embeds: [montarEmbed(res)] }),
-          }).catch((e) => console.error('follow-up falhou:', e.message));
+          }).catch((e) => console.error('follow-up:', e.message));
         })());
 
-        return jsonResp({ type: 5, data: { flags: 64 } }); // DEFERRED + EPHEMERAL (só o usuário vê)
+        return jsonResp({ type: 5, data: { flags: 64 } });
       }
-
       return ephem('Comando não reconhecido.');
     }
-
     return new Response('FinControl Discord Worker', { status: 200 });
   },
 };
