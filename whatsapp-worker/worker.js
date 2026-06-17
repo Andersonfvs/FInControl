@@ -312,11 +312,23 @@ async function registrar(token, uid, nome, textoEntrada) {
   const titulo = dados.tipo === 'renda'
     ? '💰 Receita registrada'
     : (dados.pago ? '✅ Despesa registrada' : '🗓️ Conta a pagar (pendente)');
-  return { titulo, descricao: `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}` };
+  const res = { titulo, descricao: `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}` };
+  if (dados.tipo === 'despesa') res.toggle = { mesKey, id, pago: dados.pago };
+  return res;
 }
 
 function montarEmbed(res) {
   return { color: res.erro ? RED : GOLD, title: res.titulo, description: res.descricao, footer: { text: 'FinControl' } };
+}
+// Botão pra alternar pago/pendente (só pra despesa em dadosPorMes)
+function componentesToggle(toggle) {
+  if (!toggle) return [];
+  return [{ type: 1, components: [{
+    type: 2,
+    style: toggle.pago ? 2 : 3, // cinza se pago, verde se for marcar como pago
+    label: toggle.pago ? '🗓️ Marcar como pendente' : '✅ Marcar como pago',
+    custom_id: `pg:${toggle.mesKey}:${toggle.id}:${toggle.pago ? '0' : '1'}`,
+  }] }];
 }
 
 // ─── Discord: verificação Ed25519 ───
@@ -373,12 +385,42 @@ export default {
           }
           await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${interaction.token}/messages/@original`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ embeds: [montarEmbed(res)] }),
+            body: JSON.stringify({ embeds: [montarEmbed(res)], components: componentesToggle(res.toggle) }),
           }).catch((e) => console.error('follow-up:', e.message));
         })());
 
         return jsonResp({ type: 5, data: { flags: 64 } });
       }
+
+      // Clique de botão (alternar pago/pendente)
+      if (interaction.type === 3) {
+        const discordId = interaction.member?.user?.id || interaction.user?.id;
+        const cid = interaction.data?.custom_id || '';
+        ctx.waitUntil((async () => {
+          let embed, comps = [];
+          try {
+            const token = await getToken(env);
+            const uid = await acharUidPorDiscord(discordId, token);
+            const [, mesKey, id, alvo] = cid.split(':');
+            if (!uid || !mesKey || !id) throw new Error('dados invalidos');
+            const novoPago = alvo === '1';
+            await fbPatch(`usuarios/${uid}/dadosPorMes/${mesKey}/${id}`, token, { pago: novoPago });
+            const t = await fbGet(`usuarios/${uid}/dadosPorMes/${mesKey}/${id}`, token).catch(() => null);
+            const desc = t ? `**${formatarMoeda(t.valor)}** — ${t.descricao}\n${t.categoria}` : 'Atualizado.';
+            embed = { color: GOLD, title: novoPago ? '✅ Despesa paga' : '🗓️ Conta a pagar (pendente)', description: desc, footer: { text: 'FinControl' } };
+            comps = componentesToggle({ mesKey, id, pago: novoPago });
+          } catch (e) {
+            console.error('toggle:', e.message);
+            embed = { color: RED, title: '⚠️ Erro', description: 'Não consegui atualizar.', footer: { text: 'FinControl' } };
+          }
+          await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${interaction.token}/messages/@original`, {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ embeds: [embed], components: comps }),
+          }).catch(() => {});
+        })());
+        return jsonResp({ type: 6 }); // DEFERRED_UPDATE_MESSAGE
+      }
+
       return ephem('Comando não reconhecido.');
     }
     return new Response('FinControl Discord Worker', { status: 200 });
