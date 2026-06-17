@@ -209,6 +209,7 @@ export function parsearInputMagico(
   usuarioNome: string,
   cartoesDisponiveis?: CartaoCredito[],
   categoriasCustomizadas?: CategoriaCustomizada[],
+  pessoas?: string[], // membros da família (multi-tenant) — substitui o hardcode
 ): DadosInputMagico | null {
   const texto = input.trim();
   if (!texto) return null;
@@ -264,14 +265,18 @@ export function parsearInputMagico(
     }
   }
 
-  // ── 4. Extrair pessoa ─────────────────────────────────────
+  // ── 4. Detectar pessoa (lista dinâmica de membros — multi-tenant) ──
+  // Procura o primeiro nome de cada membro cadastrado; sem hardcode.
   let pessoa = usuarioNome;
-  if (resto.includes('anderson')) {
-    pessoa = 'Anderson Ferreira';
-    resto = resto.replace(/anderson(\s+ferreira)?/, '').trim();
-  } else if (resto.includes('evelin')) {
-    pessoa = 'Evelin Mulbaier';
-    resto = resto.replace(/evelin(\s+mulbaier)?/, '').trim();
+  if (pessoas && pessoas.length > 0) {
+    for (const membro of pessoas) {
+      const partes = membro.trim().toLowerCase().split(/\s+/).filter(p => p.length > 1);
+      if (partes[0] && resto.includes(partes[0])) {
+        pessoa = membro;
+        partes.forEach(p => { resto = resto.replace(p, '').trim(); });
+        break;
+      }
+    }
   }
 
   // ── 5. Detectar RECEITA explícita ─────────────────────────

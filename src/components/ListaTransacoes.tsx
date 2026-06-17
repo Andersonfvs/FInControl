@@ -10,6 +10,7 @@ import { useDarkMode } from '@/hooks/useDarkMode';
 interface Props {
   transacoes: Transacao[];
   usuarioNome: string;
+  pessoas?: string[];
   onEditar: (transacao: Transacao) => void;
   onExcluir: (id: string) => void;
   onMarcarPago: (id: string) => void;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 export default function ListaTransacoes({
-  transacoes, usuarioNome, onEditar, onExcluir,
+  transacoes, usuarioNome, pessoas, onEditar, onExcluir,
   onMarcarPago, onDuplicar, onInputMagico, onToast
 }: Props) {
   const isMobile = useIsMobile();
@@ -70,7 +71,7 @@ export default function ListaTransacoes({
     const texto = inputMagico.trim();
     if (!texto) return;
 
-    const dados = parsearInputMagico(texto, usuarioNome);
+    const dados = parsearInputMagico(texto, usuarioNome, undefined, undefined, pessoas);
     if (!dados) {
       onToast('Não entendi o valor. Tente: "35 lanche ontem" ou "120,50 mercado hoje"', 'erro');
       return;

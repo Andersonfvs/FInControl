@@ -30,6 +30,18 @@ import CustoKm from '@/components/CustoKm';
 
 type ToastTipo = 'sucesso' | 'erro' | 'aviso' | 'info';
 
+// Migração legada (one-time): nomes/membros da família original, usados SÓ pra
+// semear o banco no 1º login. Depois disso tudo vem de perfil/nome +
+// pessoasCadastradas no banco — pode apagar este mapa quando quiser.
+const SEED_LEGADO: Record<string, { nome: string; pessoas: string[] }> = {
+  'andersonfvsti@gmail.com': { nome: 'Anderson Ferreira', pessoas: ['Anderson Ferreira', 'Evelin Mulbaier'] },
+  'evelinmulbaier@gmail.com': { nome: 'Evelin Mulbaier', pessoas: ['Anderson Ferreira', 'Evelin Mulbaier'] },
+};
+function nomeDeEmail(email: string): string {
+  const local = (email.split('@')[0] || '').replace(/[._]+/g, ' ').trim();
+  return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'Você';
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -62,21 +74,16 @@ export default function DashboardPage() {
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
   const fecharToast = useCallback(() => setToast(t => ({ ...t, visivel: false })), []);
 
-  // ─── AUTH ────────────────────────────────────────────────────────────────
+  // ─── AUTH (multi-tenant: raiz = uid; nome = displayName/perfil, sem hardcode) ──
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (user) {
-        const email = user.email?.toLowerCase().trim() || '';
-        let nome = 'Usuário';
-        if (email === 'andersonfvsti@gmail.com') nome = 'Anderson Ferreira';
-        else if (email === 'evelinmulbaier@gmail.com') nome = 'Evelin Mulbaier';
-        setUsuario({ uid: user.uid, nome, email: user.email || '' });
-        setCarregando(false);
-      } else {
-        router.replace('/');
-      }
+      if (!user) { router.replace('/'); return; }
+      const email = user.email?.toLowerCase().trim() || '';
+      const nome = user.displayName || SEED_LEGADO[email]?.nome || nomeDeEmail(email);
+      setUsuario({ uid: user.uid, nome, email: user.email || '' });
+      setCarregando(false);
     });
-  return () => unsubscribe();
+    return () => unsubscribe();
   }, [router]);
 
   // ─── Firebase ─────────────────────────────────────────────────────────────
@@ -86,6 +93,17 @@ export default function DashboardPage() {
     const unsubscribe = onValue(dbRef, (snapshot) => {
       if (!snapshot.exists()) return;
       const dados = snapshot.val();
+
+      // Auto-seed (multi-tenant): garante perfil/nome e pessoasCadastradas no
+      // banco quando faltam. Guardas evitam reescrita/loop; depois é data-driven.
+      const emailUser = (usuario.email || '').toLowerCase().trim();
+      const legado = SEED_LEGADO[emailUser];
+      if (!dados.perfil?.nome) {
+        set(ref(database, `usuarios/${usuario.uid}/perfil/nome`), legado?.nome || usuario.nome).catch(console.error);
+      }
+      if (!Array.isArray(dados.pessoasCadastradas) || dados.pessoasCadastradas.length === 0) {
+        set(ref(database, `usuarios/${usuario.uid}/pessoasCadastradas`), legado?.pessoas || [usuario.nome]).catch(console.error);
+      }
 
       const dadosPorMesOriginal = dados.dadosPorMes || {};
       let precisaMigrar = false;
@@ -650,7 +668,7 @@ export default function DashboardPage() {
                 </div>
               </div>
 
-              <InputMagico usuarioNome={usuario.nome} cartoes={sistema.cartoes} categoriasCustomizadas={sistema.categoriasCustomizadas} onTransacaoCriada={handleInputMagico} />
+              <InputMagico usuarioNome={usuario.nome} cartoes={sistema.cartoes} categoriasCustomizadas={sistema.categoriasCustomizadas} pessoas={sistema.pessoasCadastradas} onTransacaoCriada={handleInputMagico} />
 
               <AtalhosRapidos
                 userId={usuario.uid}
@@ -708,6 +726,7 @@ export default function DashboardPage() {
             <ListaTransacoes
               transacoes={transacoesFiltradas}
               usuarioNome={usuario.nome}
+              pessoas={sistema.pessoasCadastradas}
               onEditar={handleEditar}
               onExcluir={handleExcluir}
               onMarcarPago={handleMarcarPago}

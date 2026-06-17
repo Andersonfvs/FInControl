@@ -8,10 +8,11 @@ interface Props {
   usuarioNome: string;
   cartoes: CartaoCredito[];
   categoriasCustomizadas?: CategoriaCustomizada[];
+  pessoas?: string[];
   onTransacaoCriada: (dados: DadosInputMagico) => void;
 }
 
-export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizadas, onTransacaoCriada }: Props) {
+export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizadas, pessoas, onTransacaoCriada }: Props) {
   const [texto, setTexto] = useState('');
   const [processando, setProcessando] = useState(false);
   const [erro, setErro] = useState('');
@@ -23,7 +24,7 @@ export default function InputMagico({ usuarioNome, cartoes, categoriasCustomizad
     setProcessando(true);
     setErro('');
 
-    const resultado = parsearInputMagico(texto, usuarioNome, cartoes, categoriasCustomizadas);
+    const resultado = parsearInputMagico(texto, usuarioNome, cartoes, categoriasCustomizadas, pessoas);
 
     if (resultado) {
       onTransacaoCriada(resultado);

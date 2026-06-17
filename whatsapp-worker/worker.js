@@ -50,7 +50,7 @@ function buscarCartaoPorNome(resto, cartoes) {
   return null;
 }
 
-function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom) {
+function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom, pessoas) {
   const texto = (input || '').trim();
   if (!texto) return null;
   let resto = texto.toLowerCase();
@@ -89,8 +89,16 @@ function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom) {
   }
 
   let pessoa = usuarioNome;
-  if (resto.includes('anderson')) { pessoa = 'Anderson Ferreira'; resto = resto.replace(/anderson(\s+ferreira)?/, '').trim(); }
-  else if (resto.includes('evelin')) { pessoa = 'Evelin Mulbaier'; resto = resto.replace(/evelin(\s+mulbaier)?/, '').trim(); }
+  if (pessoas && pessoas.length > 0) {
+    for (const membro of pessoas) {
+      const partes = membro.trim().toLowerCase().split(/\s+/).filter(p => p.length > 1);
+      if (partes[0] && resto.includes(partes[0])) {
+        pessoa = membro;
+        partes.forEach(p => { resto = resto.replace(p, '').trim(); });
+        break;
+      }
+    }
+  }
 
   const forcaReceita = resto.includes('receita') || resto.includes('renda') || resto.includes('salario') || resto.includes('salário');
   if (forcaReceita) resto = resto.replace(/receita|renda|salario|salário/g, '').trim();
@@ -250,11 +258,13 @@ async function nomeDoUsuario(uid, token) {
 
 // ─── Parseia e grava (transação = atômica; fatura = formato atual) ───
 async function registrar(token, uid, nome, textoEntrada) {
-  const [cartoes, categoriasCustom] = await Promise.all([
+  const [cartoes, categoriasCustom, pessoasRaw] = await Promise.all([
     fbGet(`usuarios/${uid}/cartoes`, token).catch(() => null),
     fbGet(`usuarios/${uid}/categoriasCustomizadas`, token).catch(() => null),
+    fbGet(`usuarios/${uid}/pessoasCadastradas`, token).catch(() => null),
   ]);
-  const dados = parsearInputMagico(textoEntrada, nome, comoArray(cartoes) || undefined, comoArray(categoriasCustom) || undefined);
+  const pessoas = comoArray(pessoasRaw);
+  const dados = parsearInputMagico(textoEntrada, nome, comoArray(cartoes) || undefined, comoArray(categoriasCustom) || undefined, pessoas.length ? pessoas : undefined);
   if (!dados) return { erro: true, titulo: '🤔 Não entendi', descricao: 'Manda algo como:\n`150 mercado`\n`nubank 200 gasolina`\n`300 farmacia 3x`' };
 
   // CRÉDITO → fatura (formato atual, mantém totalFatura pro app renderizar certo)
