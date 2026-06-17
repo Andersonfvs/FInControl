@@ -349,6 +349,13 @@ export function parsearInputMagico(
     pago = true;
   }
 
+  // ── 7b. Conta a pagar (pendente) — registra sem marcar como pago ──
+  const ehPendente = /\bpendente\b|a pagar|nao pago|não pago|falta pagar|\bagendar\b|\bagendad[oa]\b/.test(resto);
+  if (ehPendente) {
+    pago = false;
+    resto = resto.replace(/\bpendente\b|a pagar|nao pago|não pago|falta pagar|\bagendar\b|\bagendad[oa]\b/g, '').trim();
+  }
+
   // ── 8. Detectar tipo (renda ou despesa) ───────────────────
   const tipo: 'despesa' | 'renda' = forcaReceita ? 'renda' : 'despesa';
 

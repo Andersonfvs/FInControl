@@ -128,6 +128,13 @@ function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom) {
     if (!cartaoId && cartoes && cartoes.length === 1) { cartaoId = cartoes[0].id; cartaoNome = cartoes[0].nome; }
   }
 
+  // Conta a pagar (pendente) — registra sem marcar como pago
+  const ehPendente = /\bpendente\b|a pagar|nao pago|não pago|falta pagar|\bagendar\b|\bagendad[oa]\b/.test(resto);
+  if (ehPendente) {
+    pago = false;
+    resto = resto.replace(/\bpendente\b|a pagar|nao pago|não pago|falta pagar|\bagendar\b|\bagendad[oa]\b/g, '').trim();
+  }
+
   const tipo = forcaReceita ? 'renda' : 'despesa';
   let categoria = tipo === 'renda' ? 'Outras Receitas' : 'Outras Despesas';
 
@@ -302,10 +309,10 @@ async function registrar(token, uid, nome, textoEntrada) {
   const mesKey = gerarMesKey(new Date(dados.data + 'T12:00:00'));
   await fbPatch(`usuarios/${uid}/dadosPorMes/${mesKey}`, token, { [id]: transacao });
 
-  return {
-    titulo: dados.tipo === 'renda' ? '💰 Receita registrada' : '✅ Despesa registrada',
-    descricao: `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}`,
-  };
+  const titulo = dados.tipo === 'renda'
+    ? '💰 Receita registrada'
+    : (dados.pago ? '✅ Despesa registrada' : '🗓️ Conta a pagar (pendente)');
+  return { titulo, descricao: `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}` };
 }
 
 function montarEmbed(res) {
