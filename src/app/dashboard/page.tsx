@@ -86,75 +86,65 @@ export default function DashboardPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // ─── Firebase ─────────────────────────────────────────────────────────────
+  // ─── Firebase: CONFIG (nós pequenos/bounded) — NÃO baixa dadosPorMes ───
   useEffect(() => {
     if (!usuario) return;
-    const dbRef = ref(database, `usuarios/${usuario.uid}`);
-    const unsubscribe = onValue(dbRef, (snapshot) => {
-      if (!snapshot.exists()) return;
-      const dados = snapshot.val();
+    const base = `usuarios/${usuario.uid}`;
+    const email = (usuario.email || '').toLowerCase().trim();
+    const legado = SEED_LEGADO[email];
+    const asArr = <T,>(v: unknown): T[] =>
+      Array.isArray(v) ? (v as T[]) : (v && typeof v === 'object' ? (Object.values(v as object) as T[]) : []);
 
-      // Auto-seed (multi-tenant): garante perfil/nome e pessoasCadastradas no
-      // banco quando faltam. Guardas evitam reescrita/loop; depois é data-driven.
-      const emailUser = (usuario.email || '').toLowerCase().trim();
-      const legado = SEED_LEGADO[emailUser];
-      if (!dados.perfil?.nome) {
-        set(ref(database, `usuarios/${usuario.uid}/perfil/nome`), legado?.nome || usuario.nome).catch(console.error);
-      }
-      if (!Array.isArray(dados.pessoasCadastradas) || dados.pessoasCadastradas.length === 0) {
-        set(ref(database, `usuarios/${usuario.uid}/pessoasCadastradas`), legado?.pessoas || [usuario.nome]).catch(console.error);
-      }
-
-      const dadosPorMesOriginal = dados.dadosPorMes || {};
-      let precisaMigrar = false;
-      const dadosPorMesMigrado: { [key: string]: Transacao[] } = {};
-      for (const mesKey in dadosPorMesOriginal) {
-        const lista: Transacao[] = Array.isArray(dadosPorMesOriginal[mesKey])
-          ? (dadosPorMesOriginal[mesKey] as Transacao[])
-          : Object.values(dadosPorMesOriginal[mesKey] || {} as Record<string, Transacao>);
-        dadosPorMesMigrado[mesKey] = lista.map((t: Transacao) => {
-          if (!t?.id) { precisaMigrar = true; return { ...t, id: gerarId() }; }
-          return t;
-        });
-      }
-      if (precisaMigrar) set(ref(database, `usuarios/${usuario.uid}/dadosPorMes`), dadosPorMesMigrado).catch(console.error);
-
-      const faturasOriginal = dados.faturas || {};
-      let precisaMigrarFaturas = false;
-      const faturasMigradas: { [mesKey: string]: FaturaMensal[] } = {};
-      for (const mesKey in faturasOriginal) {
-        const lista: FaturaMensal[] = Array.isArray(faturasOriginal[mesKey])
-          ? (faturasOriginal[mesKey] as FaturaMensal[])
-          : Object.values(faturasOriginal[mesKey] || {} as Record<string, FaturaMensal>);
-        faturasMigradas[mesKey] = lista.map((f: FaturaMensal) => {
-          if (!f) return f;
-          if (!f.itens) { precisaMigrarFaturas = true; return { ...f, itens: [], totalFatura: f.totalFatura || 0 } as FaturaMensal; }
-          if (!Array.isArray(f.itens)) { precisaMigrarFaturas = true; return { ...f, itens: Object.values(f.itens || {}) } as FaturaMensal; }
-          return f;
-        });
-      }
-      if (precisaMigrarFaturas) set(ref(database, `usuarios/${usuario.uid}/faturas`), faturasMigradas).catch(console.error);
-
-      const reservaRaw = dados.reservaEmergencia || {};
-      const reservaNormalizada = {
-        transacoes: Array.isArray(reservaRaw.transacoes) ? reservaRaw.transacoes : Object.values(reservaRaw.transacoes || {}),
-        taxaCDIAnual: reservaRaw.taxaCDIAnual || 14.9,
-        meta: reservaRaw.meta,
-        ultimoCreditoCDI: reservaRaw.ultimoCreditoCDI,
-      };
-
-      setSistema({
-        dadosPorMes: dadosPorMesMigrado,
-        pessoasCadastradas: dados.pessoasCadastradas || [],
-        metas: dados.metas || [],
-        reservaEmergencia: reservaNormalizada,
-        cartoes: dados.cartoes || [],
-        faturas: precisaMigrarFaturas ? faturasMigradas : faturasOriginal,
-        categoriasCustomizadas: dados.categoriasCustomizadas || [],
-      });
-    });
-  return () => unsubscribe();
+    const subs: Array<() => void> = [
+      onValue(ref(database, `${base}/cartoes`), s => setSistema(p => ({ ...p, cartoes: s.val() || [] }))),
+      onValue(ref(database, `${base}/faturas`), s => setSistema(p => ({ ...p, faturas: s.val() || {} }))),
+      onValue(ref(database, `${base}/categoriasCustomizadas`), s => setSistema(p => ({ ...p, categoriasCustomizadas: s.val() || [] }))),
+      onValue(ref(database, `${base}/metas`), s => setSistema(p => ({ ...p, metas: s.val() || [] }))),
+      onValue(ref(database, `${base}/reservaEmergencia`), s => {
+        const r = (s.val() || {}) as { transacoes?: unknown; taxaCDIAnual?: number; meta?: number; ultimoCreditoCDI?: string };
+        setSistema(p => ({ ...p, reservaEmergencia: {
+          transacoes: asArr(r.transacoes), taxaCDIAnual: r.taxaCDIAnual || 14.9, meta: r.meta, ultimoCreditoCDI: r.ultimoCreditoCDI,
+        } }));
+      }),
+      onValue(ref(database, `${base}/pessoasCadastradas`), s => {
+        const lista = asArr<string>(s.val());
+        setSistema(p => ({ ...p, pessoasCadastradas: lista }));
+        if (lista.length === 0) set(ref(database, `${base}/pessoasCadastradas`), legado?.pessoas || [usuario.nome]).catch(console.error);
+      }),
+      onValue(ref(database, `${base}/perfil`), s => {
+        const perfil = (s.val() || {}) as { nome?: string };
+        if (!perfil.nome) set(ref(database, `${base}/perfil/nome`), legado?.nome || usuario.nome).catch(console.error);
+      }),
+    ];
+    return () => subs.forEach(u => u());
   }, [usuario]);
+
+  // ─── dadosPorMes: mês ATUAL ao vivo + janela de histórico (get 1x/mudança) ───
+  useEffect(() => {
+    if (!usuario) return;
+    const base = `usuarios/${usuario.uid}/dadosPorMes`;
+    const asArr = (v: unknown): Transacao[] =>
+      Array.isArray(v) ? (v as Transacao[]) : (v && typeof v === 'object' ? (Object.values(v as object) as Transacao[]) : []);
+
+    // histórico (12 meses até o mês selecionado) — leitura única, sem listener vivo
+    (async () => {
+      const meses: string[] = [];
+      for (let i = -11; i <= 0; i++) { const d = new Date(dataReferencia); d.setMonth(d.getMonth() + i); meses.push(gerarMesKey(d)); }
+      const snaps = await Promise.all(meses.map(m => get(ref(database, `${base}/${m}`))));
+      setSistema(p => {
+        const novo = { ...p.dadosPorMes };
+        meses.forEach((m, i) => { novo[m] = asArr(snaps[i].val()); });
+        return { ...p, dadosPorMes: novo };
+      });
+    })().catch(console.error);
+
+    // mês atual AO VIVO (atualiza na hora ao lançar algo)
+    const mesAtual = gerarMesKey(dataReferencia);
+    const unsub = onValue(ref(database, `${base}/${mesAtual}`), s => {
+      setSistema(p => ({ ...p, dadosPorMes: { ...p.dadosPorMes, [mesAtual]: asArr(s.val()) } }));
+    });
+    return () => unsub();
+  }, [usuario, dataReferencia]);
 
   const handleEditar = (transacao: Transacao) => {
     setTransacaoEditando(transacao);
