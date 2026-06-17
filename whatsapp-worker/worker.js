@@ -1,36 +1,27 @@
 /**
- * FinControl — Worker multi-canal (WhatsApp + Discord)
+ * FinControl — Worker do Discord (canal oficial de lançamento)
  *
- * WhatsApp:  POST /          (webhook Meta Cloud API)
- * Discord:   POST /discord   (interactions endpoint, slash command /add)
+ * Discord: POST /discord  (interactions endpoint, slash command /add)
+ * Fluxo: /add <texto> → parseia → grava no Firebase (REST) → responde embed (privado).
  *
- * Variáveis (painel Cloudflare / wrangler.jsonc):
- *   WHATSAPP_TOKEN, PHONE_NUMBER_ID, VERIFY_TOKEN  — WhatsApp
- *   DISCORD_PUBLIC_KEY, DISCORD_APP_ID             — Discord
- *   FIREBASE_SECRET                                — Firebase REST (secret)
+ * Variáveis (wrangler.jsonc / painel Cloudflare):
+ *   DISCORD_PUBLIC_KEY, DISCORD_APP_ID   — Discord (públicos)
+ *   FIREBASE_SECRET                      — Firebase REST (secret, acesso total)
  */
 
 const FIREBASE_DB = 'https://nossas-contas-ed340-v2-default-rtdb.firebaseio.com';
+const GOLD = 0xcc9166;
+const RED = 0xc0392b;
+const MAX_INPUT = 200; // limite de tamanho do lançamento (anti-abuso)
 
-// WhatsApp: telefone (últimos 8 dígitos) → UID
-const PESSOAS = [
-  { ultimos8: '95976134', uid: 'KH17mEyb6LQgRZztktRecPpvgT83', nome: 'Anderson Ferreira' },
-  // { ultimos8: '00000000', uid: 'q9jbIxoA5Oh6IIuUPfi5K8PGFbD3', nome: 'Evelin Mulbaier' },
-];
-
-// Discord: ID do usuário → UID (preenchido depois do 1º /add, que revela o ID)
+// Discord: ID do usuário → UID do Firebase. Bot revela o ID se não-autorizado.
 const PESSOAS_DISCORD = [
   { discordId: '1182096672050905129', uid: 'KH17mEyb6LQgRZztktRecPpvgT83', nome: 'Anderson Ferreira' },
   // { discordId: '...', uid: 'q9jbIxoA5Oh6IIuUPfi5K8PGFbD3', nome: 'Evelin Mulbaier' },
 ];
 
-function acharPessoa(telefone) {
-  const digitos = (telefone || '').replace(/\D/g, '');
-  return PESSOAS.find(p => p.ultimos8 === digitos.slice(-8)) || null;
-}
-
 // ─────────────────────────────────────────────────────────────
-// PARSER — cópia de parsearInputMagico
+// PARSER — cópia de parsearInputMagico (src/utils/categorias.ts)
 // ─────────────────────────────────────────────────────────────
 
 const MAPA_CATEGORIAS_PALAVRAS = [
@@ -177,87 +168,84 @@ function parsearInputMagico(input, usuarioNome, cartoes, categoriasCustom) {
 }
 
 // ─────────────────────────────────────────────────────────────
-// HELPERS
+// FIREBASE (REST) + HELPERS
 // ─────────────────────────────────────────────────────────────
 
 function gerarMesKey(data) { return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}`; }
 function gerarId() { return `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`; }
 function formatarMoeda(valor) { return 'R$ ' + valor.toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+const comoArray = (v) => Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
 
 async function fbGet(path, secret) {
-  const r = await fetch(`${FIREBASE_DB}/${path}.json?auth=${secret}`);
-  if (!r.ok) return null;
+  const r = await fetch(`${FIREBASE_DB}/${path}.json?auth=${encodeURIComponent(secret)}`);
+  if (!r.ok) throw new Error('fbGet ' + r.status);
   return r.json();
 }
 async function fbPut(path, secret, data) {
-  return fetch(`${FIREBASE_DB}/${path}.json?auth=${secret}`, {
+  const r = await fetch(`${FIREBASE_DB}/${path}.json?auth=${encodeURIComponent(secret)}`, {
     method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
   });
+  if (!r.ok) throw new Error('fbPut ' + r.status);
+  return r;
 }
 
-// Lógica compartilhada: parseia, grava no Firebase e devolve o texto de confirmação.
+// Parseia, grava (read-modify-write) e devolve um resultado estruturado pro embed.
 async function registrar(env, uid, nome, textoEntrada) {
   const [cartoes, categoriasCustom] = await Promise.all([
-    fbGet(`usuarios/${uid}/cartoes`, env.FIREBASE_SECRET),
-    fbGet(`usuarios/${uid}/categoriasCustomizadas`, env.FIREBASE_SECRET),
+    fbGet(`usuarios/${uid}/cartoes`, env.FIREBASE_SECRET).catch(() => null),
+    fbGet(`usuarios/${uid}/categoriasCustomizadas`, env.FIREBASE_SECRET).catch(() => null),
   ]);
-  const dados = parsearInputMagico(
-    textoEntrada, nome,
-    Array.isArray(cartoes) ? cartoes : (cartoes ? Object.values(cartoes) : undefined),
-    Array.isArray(categoriasCustom) ? categoriasCustom : (categoriasCustom ? Object.values(categoriasCustom) : undefined),
-  );
-  if (!dados) return 'Não entendi 🤔\nMande algo como:\n"150 mercado"\n"nubank 200 gasolina"\n"300 farmacia 3x"';
 
-  // Crédito no cartão → fatura (parcelado espalha pelos meses)
+  const dados = parsearInputMagico(textoEntrada, nome, comoArray(cartoes) || undefined, comoArray(categoriasCustom) || undefined);
+  if (!dados) {
+    return { erro: true, titulo: '🤔 Não entendi', descricao: 'Manda algo como:\n`150 mercado`\n`nubank 200 gasolina`\n`300 farmacia 3x`' };
+  }
+
+  // ── Crédito → fatura (parcelado espalha pelos meses) ──
   if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
     const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
     const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
     const faturasPath = `usuarios/${uid}/faturas`;
-    const faturasAtual = await fbGet(faturasPath, env.FIREBASE_SECRET);
-    const novasFaturas = (faturasAtual && typeof faturasAtual === 'object') ? faturasAtual : {};
-    const mesesAfetados = [];
+    const faturasAtual = await fbGet(faturasPath, env.FIREBASE_SECRET).catch(() => null);
+    const faturas = (faturasAtual && typeof faturasAtual === 'object') ? faturasAtual : {};
+    const meses = [];
     for (let i = 0; i < totalParcelas; i++) {
       const dataBase = new Date(dados.data + 'T00:00:00');
       dataBase.setMonth(dataBase.getMonth() + i);
       const mesFatura = gerarMesKey(dataBase);
-      mesesAfetados.push(mesFatura);
+      meses.push(mesFatura);
       const item = {
         id: gerarId(), cartaoId: dados.cartaoId, data: dataBase.toISOString().split('T')[0],
         descricao: dados.descricao, valor: valorParcela, categoria: dados.categoria,
         pessoa: dados.pessoa, parcelas: totalParcelas, parcelaAtual: i + 1,
       };
       if (totalParcelas > 1) item.parcelamento = { parcelaAtual: i + 1, totalParcelas };
-      let listaMes = novasFaturas[mesFatura];
-      listaMes = Array.isArray(listaMes) ? listaMes : (listaMes ? Object.values(listaMes) : []);
-      novasFaturas[mesFatura] = listaMes;
+      const listaMes = comoArray(faturas[mesFatura]);
+      faturas[mesFatura] = listaMes;
       const existente = listaMes.find(f => f && f.cartaoId === dados.cartaoId);
       if (existente) {
-        existente.itens = Array.isArray(existente.itens) ? existente.itens : (existente.itens ? Object.values(existente.itens) : []);
+        existente.itens = comoArray(existente.itens);
         existente.itens.push(item);
         existente.totalFatura = existente.itens.reduce((s, it) => s + it.valor, 0);
       } else {
         listaMes.push({ cartaoId: dados.cartaoId, mesReferencia: mesFatura, itens: [item], totalFatura: valorParcela, paga: false });
       }
     }
-    await fbPut(faturasPath, env.FIREBASE_SECRET, novasFaturas);
-    const linhas = [
-      `💳 Compra no cartão${dados.cartaoNome ? ' ' + dados.cartaoNome : ''}`, ``,
-      `${formatarMoeda(dados.valor)} — ${dados.descricao}`, `${dados.categoria}`,
-    ];
-    if (totalParcelas > 1) {
-      linhas.push(`${totalParcelas}x de ${formatarMoeda(valorParcela)}`);
-      linhas.push(`Lançado nas faturas ${mesesAfetados[0]} → ${mesesAfetados[mesesAfetados.length - 1]}`);
-    } else {
-      linhas.push(`Fatura ${mesesAfetados[0]}`);
-    }
-    return linhas.join('\n');
+    await fbPut(faturasPath, env.FIREBASE_SECRET, faturas);
+
+    let descricao = `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}`;
+    descricao += totalParcelas > 1
+      ? `\n${totalParcelas}x de ${formatarMoeda(valorParcela)} · faturas ${meses[0]} → ${meses[meses.length - 1]}`
+      : `\nFatura ${meses[0]}`;
+    return { titulo: `💳 ${dados.cartaoNome || 'Cartão'}`, descricao };
   }
 
+  // ── Mencionou cartão mas não achei qual ──
   if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
-    return '❌ Não achei esse cartão.\nCadastre ele no app primeiro, ou escreva o nome certo.\nEx: "nubank 150 gasolina"';
+    return { erro: true, titulo: '❌ Cartão não encontrado', descricao: 'Cadastre o cartão no app, ou escreva o nome certo.\nEx: `nubank 150 gasolina`' };
   }
 
-  // Dinheiro / débito / receita → dadosPorMes
+  // ── Dinheiro / débito / receita → dadosPorMes ──
   const transacao = {
     id: gerarId(), data: dados.data, categoria: dados.categoria, descricao: dados.descricao,
     valor: dados.valor, pessoa: dados.pessoa, tipo: dados.tipo, pago: dados.pago,
@@ -265,28 +253,24 @@ async function registrar(env, uid, nome, textoEntrada) {
   if (dados.quilometragem) transacao.quilometragem = dados.quilometragem;
   const mesKey = gerarMesKey(new Date(dados.data + 'T12:00:00'));
   const path = `usuarios/${uid}/dadosPorMes/${mesKey}`;
-  const atual = await fbGet(path, env.FIREBASE_SECRET);
-  const lista = Array.isArray(atual) ? atual : (atual ? Object.values(atual) : []);
+  const lista = comoArray(await fbGet(path, env.FIREBASE_SECRET).catch(() => null));
   lista.push(transacao);
   await fbPut(path, env.FIREBASE_SECRET, lista);
-  const emoji = dados.tipo === 'renda' ? '💰' : '✅';
-  return [
-    `${emoji} ${dados.tipo === 'renda' ? 'Receita' : 'Despesa'} registrada`, ``,
-    `${formatarMoeda(dados.valor)} — ${dados.descricao}`, `${dados.categoria}`,
-  ].join('\n');
+
+  return {
+    titulo: dados.tipo === 'renda' ? '💰 Receita registrada' : '✅ Despesa registrada',
+    descricao: `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}`,
+  };
 }
 
-async function responderWhatsApp(env, para, texto) {
-  const r = await fetch(`https://graph.facebook.com/v21.0/${env.PHONE_NUMBER_ID}/messages`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${env.WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messaging_product: 'whatsapp', to: para, type: 'text', text: { body: texto } }),
-  });
-  const corpo = await r.text();
-  console.log('[REPLY] para=' + para + ' status=' + r.status + ' resp=' + corpo);
+function montarEmbed(res) {
+  return { color: res.erro ? RED : GOLD, title: res.titulo, description: res.descricao, footer: { text: 'FinControl' } };
 }
 
-// ─── Discord: verificação de assinatura Ed25519 ───
+// ─────────────────────────────────────────────────────────────
+// DISCORD — verificação Ed25519 + roteamento
+// ─────────────────────────────────────────────────────────────
+
 function hexToBytes(hex) {
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
@@ -303,80 +287,51 @@ async function verificarDiscord(request, rawBody, publicKeyHex) {
   } catch { return false; }
 }
 const jsonResp = (obj) => new Response(JSON.stringify(obj), { headers: { 'Content-Type': 'application/json' } });
-
-// ─────────────────────────────────────────────────────────────
-// WORKER
-// ─────────────────────────────────────────────────────────────
+const ephem = (content) => jsonResp({ type: 4, data: { content, flags: 64 } });
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
 
-    // ─── DISCORD (POST /discord) ───
     if (url.pathname === '/discord' && request.method === 'POST') {
       const raw = await request.text();
-      const valido = await verificarDiscord(request, raw, env.DISCORD_PUBLIC_KEY);
-      if (!valido) return new Response('invalid request signature', { status: 401 });
+      if (!(await verificarDiscord(request, raw, env.DISCORD_PUBLIC_KEY))) {
+        return new Response('invalid request signature', { status: 401 });
+      }
 
-      const interaction = JSON.parse(raw);
+      let interaction;
+      try { interaction = JSON.parse(raw); } catch { return new Response('bad request', { status: 400 }); }
+
       if (interaction.type === 1) return jsonResp({ type: 1 }); // PING → PONG
 
       if (interaction.type === 2) { // slash command
         const userId = interaction.member?.user?.id || interaction.user?.id;
         const pessoa = PESSOAS_DISCORD.find(p => p.discordId === userId);
         if (!pessoa) {
-          return jsonResp({ type: 4, data: { content: `👋 Seu ID do Discord é \`${userId}\`.\nPasse esse ID pro admin autorizar você no FinControl.`, flags: 64 } });
+          return ephem(`👋 Seu ID do Discord é \`${userId}\`.\nPasse esse ID pro admin autorizar você no FinControl.`);
         }
-        const texto = interaction.data?.options?.[0]?.value || '';
-        // Responde "pensando..." e faz o trabalho em background (limite de 3s do Discord)
+
+        const texto = (interaction.data?.options?.[0]?.value || '').trim();
+        if (!texto) return ephem('Escreva o lançamento. Ex: `/add 150 mercado`');
+        if (texto.length > MAX_INPUT) return ephem(`Texto muito longo (máx ${MAX_INPUT} caracteres).`);
+
+        // Discord exige resposta em 3s → defere (privado) e termina o trabalho em background.
         ctx.waitUntil((async () => {
-          let resultado;
-          try { resultado = await registrar(env, pessoa.uid, pessoa.nome, texto); }
-          catch (e) { resultado = '⚠️ Deu um erro ao registrar. Tenta de novo.'; }
+          let res;
+          try { res = await registrar(env, pessoa.uid, pessoa.nome, texto); }
+          catch (e) { console.error('registrar falhou:', e.message); res = { erro: true, titulo: '⚠️ Erro ao registrar', descricao: 'Tenta de novo daqui a pouco.' }; }
           await fetch(`https://discord.com/api/v10/webhooks/${env.DISCORD_APP_ID}/${interaction.token}/messages/@original`, {
             method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: resultado }),
-          });
+            body: JSON.stringify({ embeds: [montarEmbed(res)] }),
+          }).catch((e) => console.error('follow-up falhou:', e.message));
         })());
+
         return jsonResp({ type: 5, data: { flags: 64 } }); // DEFERRED + EPHEMERAL (só o usuário vê)
       }
-      return jsonResp({ type: 4, data: { content: 'Comando não reconhecido.' } });
+
+      return ephem('Comando não reconhecido.');
     }
 
-    // ─── WHATSAPP: verificação do webhook (GET /) ───
-    if (request.method === 'GET') {
-      const mode = url.searchParams.get('hub.mode');
-      const token = url.searchParams.get('hub.verify_token');
-      const challenge = url.searchParams.get('hub.challenge');
-      if (mode === 'subscribe' && token === env.VERIFY_TOKEN) return new Response(challenge, { status: 200 });
-      return new Response('Forbidden', { status: 403 });
-    }
-
-    // ─── WHATSAPP: mensagem recebida (POST /) ───
-    if (request.method === 'POST') {
-      let body;
-      try { body = await request.json(); } catch { return new Response('OK', { status: 200 }); }
-      try {
-        const valor = body?.entry?.[0]?.changes?.[0]?.value;
-        if (valor?.statuses) console.log('[STATUS] ' + JSON.stringify(valor.statuses));
-        const msg = valor?.messages?.[0];
-        if (!msg || msg.type !== 'text') return new Response('OK', { status: 200 });
-
-        const de = msg.from;
-        console.log('[FROM] ' + de + ' texto=' + msg.text.body);
-        const pessoa = acharPessoa(de);
-        if (!pessoa) {
-          await responderWhatsApp(env, de, 'Número não autorizado para o FinControl.');
-          return new Response('OK', { status: 200 });
-        }
-        const resultado = await registrar(env, pessoa.uid, pessoa.nome, msg.text.body);
-        await responderWhatsApp(env, de, resultado);
-        return new Response('OK', { status: 200 });
-      } catch (e) {
-        return new Response('OK', { status: 200 });
-      }
-    }
-
-    return new Response('FinControl Worker (WhatsApp + Discord)', { status: 200 });
+    return new Response('FinControl Discord Worker', { status: 200 });
   },
 };
