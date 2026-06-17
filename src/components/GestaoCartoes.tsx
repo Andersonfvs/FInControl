@@ -694,11 +694,17 @@ export default function GestaoCartoes({
   const [arquivoBuffer, setArquivoBuffer] = useState<ArrayBuffer | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pdfJsCarregado = useRef(false);
+  // Callback nativo do pdfjsLib pra reenviar a senha — guardado em ref (sem window global)
+  const pdfUpdatePasswordRef = useRef<((p: string) => void) | null>(null);
 
   useEffect(() => {
     if (pdfJsCarregado.current) return;
     const script = document.createElement('script');
     script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    // Subresource Integrity: se o CDN for adulterado, o browser recusa o script.
+    script.integrity = 'sha384-/1qUCSGwTur9vjf/z9lmu/eCUYbpOTgSjmpbMQZ1/CtX2v/WcAIKqRv+U1DUCG6e';
+    script.crossOrigin = 'anonymous';
+    script.referrerPolicy = 'no-referrer';
     script.onload = () => {
       const win = window as unknown as { pdfjsLib?: { GlobalWorkerOptions: { workerSrc: string } } };
       if (win.pdfjsLib) {
@@ -776,8 +782,8 @@ export default function GestaoCartoes({
         } else {
           setErroImport('');
         }
-        // Armazena o callback para uso posterior
-        (window as unknown as Record<string, unknown>).__pdfUpdatePassword = updatePwd;
+        // Armazena o callback num ref (sem vazar pra window global)
+        pdfUpdatePasswordRef.current = updatePwd;
       };
 
       const pdf = (await task.promise) as {
@@ -804,29 +810,42 @@ export default function GestaoCartoes({
         // Garante que colunas separadas no stream PDF sejam reunidas em
         // uma única linha visual, essencial para Riachuelo e Nubank.
         // ════════════════════════════════════════════════════════════════════
-        interface ItemTexto { str: string; x: number; y: number }
-        const grupos: { yBase: number; itens: ItemTexto[] }[] = [];
+        interface ItemTexto { str: string; x: number }
         const itens = conteudo.items as { str: string; transform: number[] }[];
 
+        // Agrupa por Y em O(n) usando um Map (chave = baseline Y arredondado ao
+        // pixel). Itens da mesma linha visual têm o mesmo baseline → mesma chave.
+        // Substitui o antigo grupos.find() dentro do loop, que era O(n²) e
+        // travava a UI em faturas longas.
+        const baldes = new Map<number, ItemTexto[]>();
         for (const item of itens) {
-          const y = item.transform[5];
-          const x = item.transform[4];
-          const str = item.str;
-          if (!str.trim()) continue;
+          if (!item.str.trim()) continue;
+          const chaveY = Math.round(item.transform[5]);
+          let balde = baldes.get(chaveY);
+          if (!balde) { balde = []; baldes.set(chaveY, balde); }
+          balde.push({ str: item.str, x: item.transform[4] });
+        }
 
-          const grupo = grupos.find(g => Math.abs(g.yBase - y) <= 3);
-          if (grupo) {
-            grupo.itens.push({ str, x, y });
+        // Funde baldes a ≤3px de distância (pequenas variações de baseline) e
+        // ordena de cima pra baixo. O(k log k) sobre as chaves (k = nº de linhas).
+        const chavesY = [...baldes.keys()].sort((a, b) => b - a);
+        const linhas: ItemTexto[][] = [];
+        let grupoAtual: ItemTexto[] | null = null;
+        let yRef: number | null = null;
+        for (const chaveY of chavesY) {
+          if (grupoAtual && yRef !== null && Math.abs(yRef - chaveY) <= 3) {
+            grupoAtual.push(...baldes.get(chaveY)!);
           } else {
-            grupos.push({ yBase: y, itens: [{ str, x, y }] });
+            grupoAtual = [...baldes.get(chaveY)!];
+            yRef = chaveY;
+            linhas.push(grupoAtual);
           }
         }
 
-        grupos.sort((a, b) => b.yBase - a.yBase);
-
-        for (const grupo of grupos) {
-          grupo.itens.sort((a, b) => a.x - b.x);
-          const linha = grupo.itens.map(i => i.str).join(' ').trim();
+        // Ordena cada linha por X (esquerda→direita) e monta o texto.
+        for (const grupo of linhas) {
+          grupo.sort((a, b) => a.x - b.x);
+          const linha = grupo.map(i => i.str).join(' ').trim();
           if (linha) textoCompleto += linha + '\n';
         }
       }
@@ -836,9 +855,6 @@ export default function GestaoCartoes({
         setProcessando(false);
         return;
       }
-
-      // DEBUG — salva o texto extraído para diagnóstico no console
-      (window as unknown as Record<string, unknown>).__lastPdfText = textoCompleto;
 
       const linhasParsadas = parsearTextoFatura(textoCompleto, mesReferencia);
 
@@ -894,8 +910,7 @@ export default function GestaoCartoes({
   const handleTentarComSenha = async () => {
     if (!senhaPDF.trim()) return;
 
-    const win = window as unknown as Record<string, unknown>;
-    const updatePwd = win.__pdfUpdatePassword as ((p: string) => void) | undefined;
+    const updatePwd = pdfUpdatePasswordRef.current;
 
     setPrecisaSenha(false);
     setErroImport('');
@@ -903,7 +918,7 @@ export default function GestaoCartoes({
 
     if (updatePwd) {
       // Usa o callback nativo do pdfjsLib — retoma o carregamento já iniciado
-      win.__pdfUpdatePassword = undefined;
+      pdfUpdatePasswordRef.current = null;
       updatePwd(senhaPDF);
     } else if (arquivoBuffer) {
       // Fallback: reprocessa o buffer com a senha informada
