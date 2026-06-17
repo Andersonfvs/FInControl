@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { ref, onValue, set, get } from 'firebase/database';
+import { ref, onValue, set, get, update } from 'firebase/database';
 import { auth, database } from '@/lib/firebase';
 import { SistemaFinanceiro, Usuario, Transacao, CartaoCredito, ItemFatura, CategoriaTotal, CategoriaCustomizada, FaturaMensal } from '@/types';
 import { gerarMesKey, calcularResumo, formatarMoeda, obterNomeMes, gerarId } from '@/utils/financeiro';
@@ -40,6 +40,41 @@ const SEED_LEGADO: Record<string, { nome: string; pessoas: string[] }> = {
 function nomeDeEmail(email: string): string {
   const local = (email.split('@')[0] || '').replace(/[._]+/g, ' ').trim();
   return local ? local.charAt(0).toUpperCase() + local.slice(1) : 'Você';
+}
+
+// Normaliza faturas: aceita formato ANTIGO (Fatura[]) e NOVO (keyed por cartaoId,
+// itens como mapa, sem totalFatura). Devolve sempre { mes: Fatura[] } com itens
+// como array e totalFatura calculado — assim os componentes de leitura não mudam.
+function normalizarFaturas(raw: unknown): { [mes: string]: FaturaMensal[] } {
+  const out: { [mes: string]: FaturaMensal[] } = {};
+  const root = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {};
+  for (const mes in root) {
+    const valor = root[mes];
+    const lista = Array.isArray(valor) ? valor : (valor && typeof valor === 'object' ? Object.values(valor as object) : []);
+    const porCartao = new Map<string, FaturaMensal>();
+    for (const fRaw of lista as Array<Record<string, unknown>>) {
+      if (!fRaw || !fRaw.cartaoId) continue;
+      const cartaoId = fRaw.cartaoId as string;
+      const itRaw = fRaw.itens;
+      const itens = (Array.isArray(itRaw) ? itRaw : (itRaw && typeof itRaw === 'object' ? Object.values(itRaw as object) : [])) as ItemFatura[];
+      const existente = porCartao.get(cartaoId);
+      if (existente) {
+        existente.itens.push(...itens);
+        if (fRaw.paga) existente.paga = true;
+      } else {
+        porCartao.set(cartaoId, {
+          cartaoId,
+          mesReferencia: (fRaw.mesReferencia as string) || mes,
+          itens: [...itens],
+          paga: !!fRaw.paga,
+          totalFatura: 0,
+          ...(fRaw.dataPagamento ? { dataPagamento: fRaw.dataPagamento as string } : {}),
+        } as FaturaMensal);
+      }
+    }
+    out[mes] = [...porCartao.values()].map(f => ({ ...f, totalFatura: f.itens.reduce((s, i) => s + (i.valor || 0), 0) }));
+  }
+  return out;
 }
 
 export default function DashboardPage() {
@@ -97,7 +132,7 @@ export default function DashboardPage() {
 
     const subs: Array<() => void> = [
       onValue(ref(database, `${base}/cartoes`), s => setSistema(p => ({ ...p, cartoes: s.val() || [] }))),
-      onValue(ref(database, `${base}/faturas`), s => setSistema(p => ({ ...p, faturas: s.val() || {} }))),
+      onValue(ref(database, `${base}/faturas`), s => setSistema(p => ({ ...p, faturas: normalizarFaturas(s.val()) }))),
       onValue(ref(database, `${base}/categoriasCustomizadas`), s => setSistema(p => ({ ...p, categoriasCustomizadas: s.val() || [] }))),
       onValue(ref(database, `${base}/metas`), s => setSistema(p => ({ ...p, metas: s.val() || [] }))),
       onValue(ref(database, `${base}/reservaEmergencia`), s => {
@@ -175,50 +210,45 @@ export default function DashboardPage() {
       if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
         const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
         const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
-        const novasFaturas = { ...sistema.faturas };
+        const updates: Record<string, unknown> = {};
         for (let i = 0; i < totalParcelas; i++) {
           const dataBase = new Date(dados.data + 'T00:00:00');
           dataBase.setMonth(dataBase.getMonth() + i);
           const mesKey = gerarMesKey(dataBase);
+          const itemId = gerarId();
           const item: ItemFatura = {
-            id: gerarId(), cartaoId: dados.cartaoId,
+            id: itemId, cartaoId: dados.cartaoId,
             data: dataBase.toISOString().split('T')[0],
             descricao: dados.descricao, valor: valorParcela,
             categoria: dados.categoria, pessoa: dados.pessoa,
             parcelas: totalParcelas, parcelaAtual: i + 1,
             ...(totalParcelas > 1 && { parcelamento: { parcelaAtual: i + 1, totalParcelas } }),
           };
-          if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
-          const existente = novasFaturas[mesKey].find(f => f.cartaoId === dados.cartaoId);
-          if (existente) {
-            existente.itens.push(item);
-            existente.totalFatura = existente.itens.reduce((s, it) => s + it.valor, 0);
-          } else {
-            novasFaturas[mesKey].push({ cartaoId: dados.cartaoId, mesReferencia: mesKey, itens: [item], totalFatura: valorParcela, paga: false });
-          }
+          const b = `faturas/${mesKey}/${dados.cartaoId}`;
+          updates[`${b}/cartaoId`] = dados.cartaoId;
+          updates[`${b}/mesReferencia`] = mesKey;
+          updates[`${b}/itens/${itemId}`] = item;
         }
-        await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+        // update() atômico: grava só os itens novos, sem reler/sobrescrever faturas
+        await update(ref(database, `usuarios/${usuario.uid}`), updates);
         const textoParcelamento = totalParcelas > 1 ? ` em ${totalParcelas}x de ${formatarMoeda(valorParcela)}` : '';
         showToast(`💳 ${dados.descricao}${textoParcelamento} adicionada à fatura do ${dados.cartaoNome || 'cartão'}!`, 'sucesso');
       } else if (dados.metodoPagamento === 'cartao' && !dados.cartaoId) {
         showToast('❌ Cartão não encontrado. Cadastre o cartão primeiro!', 'erro');
       } else {
+        const id = gerarId();
         const novaTransacao: Transacao = {
-          id: gerarId(), data: dados.data, categoria: dados.categoria,
+          id, data: dados.data, categoria: dados.categoria,
           descricao: dados.descricao, valor: dados.valor, pessoa: dados.pessoa,
           tipo: dados.tipo, pago: dados.pago,
         };
         const mesKey = gerarMesKey(new Date(dados.data + 'T00:00:00'));
-        const dbRef = ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`);
-        const snapshot = await get(dbRef);
-        const existentes = snapshot.exists()
-          ? (Array.isArray(snapshot.val()) ? snapshot.val() : Object.values(snapshot.val()))
-          : [];
-        await set(dbRef, [...existentes, novaTransacao]);
+        // update() atômico: grava só o id novo, sem reler o array do mês
+        await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), { [id]: novaTransacao });
         showToast(`${dados.tipo === 'despesa' ? '💸' : '💰'} ${dados.descricao} adicionada!`, 'sucesso');
       }
     } catch { showToast('Erro ao adicionar transação', 'erro'); }
-  }, [usuario, sistema.faturas, showToast]);
+  }, [usuario, showToast]);
 
   const handleMarcarPago = async (id: string) => {
     if (!usuario) return;
@@ -330,27 +360,17 @@ export default function DashboardPage() {
   const handleAdicionarCompra = async (itens: ItemFatura[]) => {
     if (!usuario) return;
     try {
-      const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
-      const porMes: { [k: string]: ItemFatura[] } = {};
+      // update() atômico: grava cada item em faturas/{mes}/{cartaoId}/itens/{id}
+      const updates: Record<string, unknown> = {};
       itens.forEach(item => {
-        const k = gerarMesKey(new Date(item.data + 'T00:00:00'));
-        if (!porMes[k]) porMes[k] = [];
-        porMes[k].push(item);
+        const mesKey = gerarMesKey(new Date(item.data + 'T00:00:00'));
+        const itemId = item.id || gerarId();
+        const b = `faturas/${mesKey}/${item.cartaoId}`;
+        updates[`${b}/cartaoId`] = item.cartaoId;
+        updates[`${b}/mesReferencia`] = mesKey;
+        updates[`${b}/itens/${itemId}`] = { ...item, id: itemId };
       });
-      for (const mesKey in porMes) {
-        if (!novasFaturas[mesKey]) novasFaturas[mesKey] = [];
-        const itensDoMes = porMes[mesKey];
-        const cartaoId = itensDoMes[0].cartaoId;
-        const existente = (novasFaturas[mesKey] as FaturaMensal[]).find((f: FaturaMensal) => f.cartaoId === cartaoId);
-        if (existente) {
-          existente.itens = existente.itens || [];
-          existente.itens.push(...itensDoMes);
-          existente.totalFatura = existente.itens.reduce((s: number, i: ItemFatura) => s + i.valor, 0);
-        } else {
-          novasFaturas[mesKey].push({ cartaoId, mesReferencia: mesKey, itens: itensDoMes, totalFatura: itensDoMes.reduce((s, i) => s + i.valor, 0), paga: false });
-        }
-      }
-      await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      await update(ref(database, `usuarios/${usuario.uid}`), updates);
       showToast('Compra adicionada ao cartão!', 'sucesso');
     } catch { showToast('Erro ao adicionar compra', 'erro'); }
   };

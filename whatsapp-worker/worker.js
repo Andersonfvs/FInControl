@@ -271,33 +271,28 @@ async function registrar(token, uid, nome, textoEntrada) {
   if (dados.metodoPagamento === 'cartao' && dados.cartaoId) {
     const totalParcelas = dados.parcelas && dados.parcelas > 1 ? dados.parcelas : 1;
     const valorParcela = parseFloat((dados.valor / totalParcelas).toFixed(2));
-    const faturasPath = `usuarios/${uid}/faturas`;
-    const faturasAtual = await fbGet(faturasPath, token).catch(() => null);
-    const faturas = (faturasAtual && typeof faturasAtual === 'object') ? faturasAtual : {};
+    // Escrita ATÔMICA (keyed): faturas/{mes}/{cartaoId}/itens/{itemId}. Sem totalFatura
+    // (o app calcula na leitura via normalizarFaturas). Compatível com dados antigos.
+    const updates = {};
     const meses = [];
     for (let i = 0; i < totalParcelas; i++) {
       const dataBase = new Date(dados.data + 'T00:00:00');
       dataBase.setMonth(dataBase.getMonth() + i);
       const mes = gerarMesKey(dataBase);
       meses.push(mes);
+      const itemId = gerarId();
       const item = {
-        id: gerarId(), cartaoId: dados.cartaoId, data: dataBase.toISOString().split('T')[0],
+        id: itemId, cartaoId: dados.cartaoId, data: dataBase.toISOString().split('T')[0],
         descricao: dados.descricao, valor: valorParcela, categoria: dados.categoria,
         pessoa: dados.pessoa, parcelas: totalParcelas, parcelaAtual: i + 1,
       };
       if (totalParcelas > 1) item.parcelamento = { parcelaAtual: i + 1, totalParcelas };
-      const listaMes = comoArray(faturas[mes]);
-      faturas[mes] = listaMes;
-      const existente = listaMes.find(f => f && f.cartaoId === dados.cartaoId);
-      if (existente) {
-        existente.itens = comoArray(existente.itens);
-        existente.itens.push(item);
-        existente.totalFatura = existente.itens.reduce((s, it) => s + it.valor, 0);
-      } else {
-        listaMes.push({ cartaoId: dados.cartaoId, mesReferencia: mes, itens: [item], totalFatura: valorParcela, paga: false });
-      }
+      const b = `usuarios/${uid}/faturas/${mes}/${dados.cartaoId}`;
+      updates[`${b}/cartaoId`] = dados.cartaoId;
+      updates[`${b}/mesReferencia`] = mes;
+      updates[`${b}/itens/${itemId}`] = item;
     }
-    await fbPut(faturasPath, token, faturas);
+    await fbPatch('', token, updates); // PATCH na raiz com caminhos absolutos (multi-path atômico)
     let descricao = `**${formatarMoeda(dados.valor)}** — ${dados.descricao}\n${dados.categoria}`;
     descricao += totalParcelas > 1
       ? `\n${totalParcelas}x de ${formatarMoeda(valorParcela)} · faturas ${meses[0]} → ${meses[meses.length - 1]}`
