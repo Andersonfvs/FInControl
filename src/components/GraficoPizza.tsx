@@ -3,6 +3,7 @@
 import { CategoriaTotal } from '@/types';
 import { formatarMoeda } from '@/utils/financeiro';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import EmptyState from './EmptyState';
 
 interface Props {
   categorias: CategoriaTotal[];
@@ -14,50 +15,14 @@ export default function GraficoPizza({ categorias }: Props) {
   const isMobile = useIsMobile();
 
   if (!categorias || categorias.length === 0) {
-    return (
-      <div style={{
-        background: 'white',
-        border: '1px solid #e5e7eb',
-        borderRadius: '0.5rem',
-        padding: '1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '300px'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📊</div>
-          <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-            Nenhuma despesa para mostrar
-          </div>
-        </div>
-      </div>
-    );
+    return <EmptyState icon="chart-pie" title="Nenhuma despesa para mostrar" description="Adicione despesas para ver a distribuição por categoria" />;
   }
 
   const top5 = categorias.slice(0, 5);
   const total = top5.reduce((sum, c) => sum + (c.total || 0), 0);
 
   if (total === 0 || isNaN(total) || !isFinite(total)) {
-    return (
-      <div style={{
-        background: 'white',
-        border: '1px solid #e5e7eb',
-        borderRadius: '0.5rem',
-        padding: '1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '300px'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📊</div>
-          <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-            Nenhuma despesa para mostrar
-          </div>
-        </div>
-      </div>
-    );
+    return <EmptyState icon="chart-pie" title="Nenhuma despesa para mostrar" description="Adicione despesas para ver a distribuição por categoria" />;
   }
 
   const fatias = [];

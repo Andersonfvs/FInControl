@@ -429,10 +429,37 @@ export default function DashboardPage() {
   if (carregando) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: '#000000' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: '32px', height: '32px', border: '1.5px solid #2e3038', borderTop: '1.5px solid #cc9166', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 1rem' }} />
-        <span style={{ color: '#5e616e', fontSize: '13px', letterSpacing: '-0.007em' }}>Carregando...</span>
+        <div className="slash-coin-loader" />
+        <div style={{ marginTop: '24px', fontSize: '13px', color: '#5e616e', letterSpacing: '-0.007em' }}>Carregando...</div>
       </div>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+      <style>{`
+        .slash-coin-loader { display: inline-block; transform: translateZ(1px); }
+        .slash-coin-loader::after {
+          content: 'R$';
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 56px;
+          height: 56px;
+          border-radius: 50%;
+          font-size: 16px;
+          font-weight: 700;
+          font-family: 'Inter', sans-serif;
+          letter-spacing: -0.03em;
+          background: #cc9166;
+          color: #3d2a1a;
+          border: 3px double #a8744a;
+          box-sizing: border-box;
+          box-shadow: 0 0 0 1px #2e3038;
+          animation: coin-flip 3s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+        }
+        @keyframes coin-flip {
+          0%, 100% { animation-timing-function: cubic-bezier(0.5, 0, 1, 0.5); }
+          0%   { transform: rotateY(0deg); }
+          50%  { transform: rotateY(1800deg); animation-timing-function: cubic-bezier(0, 0.5, 0.5, 1); }
+          100% { transform: rotateY(3600deg); }
+        }
+      `}</style>
     </div>
   );
 
@@ -516,40 +543,60 @@ export default function DashboardPage() {
                   <span style={{ fontSize: '13px', color: textMuted, letterSpacing: '-0.007em' }}>{usuario.nome.split(' ')[0]}</span>
                 </div>
               )}
-              <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalReceitaAberto(true); }}
-                style={{ padding: '6px 14px', background: 'transparent', color: textPrimary, border: `1px solid ${borderDefault}`, borderRadius: '2px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em' }}>
-                {isMobile ? '+ Rec.' : '+ Receita'}
-              </button>
-              <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
-                style={{ padding: '6px 14px', background: '#ffffff', color: '#08080a', border: '1px solid #ffffff', borderRadius: '2px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.007em' }}>
-                {isMobile ? '+ Desp.' : '+ Despesa'}
-              </button>
+              {!isMobile && (<>
+                <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalReceitaAberto(true); }}
+                  style={{ padding: '6px 14px', background: 'transparent', color: textPrimary, border: `1px solid ${borderDefault}`, borderRadius: '2px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                  + Receita
+                </button>
+                <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
+                  style={{ padding: '6px 14px', background: '#ffffff', color: '#08080a', border: '1px solid #ffffff', borderRadius: '2px', fontSize: '13px', fontWeight: 600, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                  + Despesa
+                </button>
+              </>)}
               <button onClick={toggleDarkMode} title={darkMode ? 'Modo claro' : 'Modo escuro'}
                 style={{ width: '32px', height: '32px', padding: '0', background: 'transparent', color: textFaint, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {darkMode ? '○' : '●'}
               </button>
-              <button onClick={async () => { await signOut(auth); router.replace('/'); }}
-                style={{ padding: '6px 12px', background: 'transparent', color: textMuted, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '13px', fontWeight: 400, cursor: 'pointer', letterSpacing: '-0.007em' }}>
-                Sair
-              </button>
+              {!isMobile && (
+                <button onClick={async () => { await signOut(auth); router.replace('/'); }}
+                  style={{ padding: '6px 12px', background: 'transparent', color: textMuted, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '13px', fontWeight: 400, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                  Sair
+                </button>
+              )}
             </div>
           </div>
         </header>
 
+        {/* Bottom navigation — mobile only */}
         {isMobile && (
-          <div style={{ background: bg, borderBottom: `1px solid ${borderColor}`, padding: `0 ${px}`, overflowX: 'auto' }}>
-            <div style={{ display: 'flex', minWidth: 'max-content' }}>
-              {tabs.map(tab => (
-                <button key={tab.id} onClick={() => setTabAtiva(tab.id)}
-                  style={{ padding: '12px 14px', background: 'transparent', border: 'none', borderBottom: tabAtiva === tab.id ? `2px solid ${gold}` : '2px solid transparent', color: tabAtiva === tab.id ? textPrimary : textMuted, fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em', whiteSpace: 'nowrap' }}>
-                  {tab.label}
-                </button>
-              ))}
+          <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200, background: bg, borderTop: `1px solid ${borderColor}`, height: '68px', display: 'flex', alignItems: 'center', paddingBottom: '8px' }}>
+            <button onClick={() => setTabAtiva('dashboard')} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '6px 0', background: 'transparent', border: 'none', color: tabAtiva === 'dashboard' ? gold : textFaint, cursor: 'pointer' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span style={{ fontSize: '10px', fontWeight: tabAtiva === 'dashboard' ? 500 : 400, letterSpacing: '-0.007em' }}>Home</span>
+            </button>
+            <button onClick={() => setTabAtiva('transacoes')} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '6px 0', background: 'transparent', border: 'none', color: tabAtiva === 'transacoes' ? gold : textFaint, cursor: 'pointer' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <span style={{ fontSize: '10px', fontWeight: tabAtiva === 'transacoes' ? 500 : 400, letterSpacing: '-0.007em' }}>Trans.</span>
+            </button>
+            {/* Botão central FAB */}
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+              <button onClick={() => { setDadosIniciais(null); setTransacaoEditando(null); setCategoriaPreenchida(''); setDescricaoPreenchida(''); setModalDespesaAberto(true); }}
+                style={{ width: '48px', height: '48px', borderRadius: '50%', background: '#ffffff', color: '#08080a', border: `3px solid ${bg}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px', fontWeight: 300, cursor: 'pointer', marginTop: '-20px', outline: 'none' }}>
+                +
+              </button>
             </div>
-          </div>
+            <button onClick={() => setTabAtiva('cartoes')} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '6px 0', background: 'transparent', border: 'none', color: tabAtiva === 'cartoes' ? gold : textFaint, cursor: 'pointer' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+              <span style={{ fontSize: '10px', fontWeight: tabAtiva === 'cartoes' ? 500 : 400, letterSpacing: '-0.007em' }}>Cartões</span>
+            </button>
+            <button onClick={() => setTabAtiva('metas')} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px', padding: '6px 0', background: 'transparent', border: 'none', color: tabAtiva === 'metas' ? gold : textFaint, cursor: 'pointer' }}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+              <span style={{ fontSize: '10px', fontWeight: tabAtiva === 'metas' ? 500 : 400, letterSpacing: '-0.007em' }}>Metas</span>
+            </button>
+          </nav>
         )}
 
-        <main style={{ padding: `1.5rem ${px}`, maxWidth: '1400px', margin: '0 auto' }}>
+        <main style={{ padding: `1.5rem ${px}`, maxWidth: '1400px', margin: '0 auto', paddingBottom: isMobile ? '88px' : undefined }}>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
             <select value={filtro} onChange={e => setFiltro(e.target.value)}
               style={{ padding: '5px 10px', borderRadius: '2px', border: `1px solid ${borderColor}`, fontSize: '12px', background: bgRaised, color: textMuted, fontFamily: "'Inter', sans-serif", letterSpacing: '-0.007em' }}>
@@ -572,37 +619,34 @@ export default function DashboardPage() {
             <div>
               <MelhorCartao cartoes={sistema.cartoes} />
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr 1fr' : 'repeat(5, 1fr)', gap: '10px', marginBottom: '1.5rem' }}>
-                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Receitas</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalReceitas)}</div>
-                </div>
-                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Despesas</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: gold, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalDespesas)}</div>
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '6px', flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: '11px', color: textFaint, letterSpacing: '-0.007em' }}>
-                      pago {formatarMoeda(resumo.despesasPagas)}
-                    </span>
+                {/* Hero card — Despesas (full width on mobile) */}
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: isMobile ? '20px 22px' : '18px 20px', gridColumn: isMobile ? 'span 2' : 'auto' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: isMobile ? '10px' : '8px' }}>Despesas do mês</div>
+                  <div style={{ fontSize: isMobile ? '2rem' : '1.625rem', fontWeight: 600, color: gold, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalDespesas)}</div>
+                  <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: '11px', color: textFaint, letterSpacing: '-0.007em' }}>pago {formatarMoeda(resumo.despesasPagas)}</span>
                     {resumo.despesasPendentes > 0 && (
-                      <span style={{ fontSize: '11px', color: textMuted, letterSpacing: '-0.007em' }}>
-                        · pend. {formatarMoeda(resumo.despesasPendentes)}
-                      </span>
+                      <span style={{ fontSize: '11px', color: textMuted, letterSpacing: '-0.007em' }}>· pend. {formatarMoeda(resumo.despesasPendentes)}</span>
                     )}
                   </div>
                 </div>
+                <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Receitas</div>
+                  <div style={{ fontSize: isMobile ? '1.15rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.totalReceitas)}</div>
+                </div>
                 <div style={{ background: bgCard, border: `1px solid ${totalFaturasPendentes > 0 ? gold + '40' : borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
-                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Fat. Pendentes</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: totalFaturasPendentes > 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(totalFaturasPendentes)}</div>
+                  <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Fat. Pend.</div>
+                  <div style={{ fontSize: isMobile ? '1.15rem' : '1.625rem', fontWeight: 600, color: totalFaturasPendentes > 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(totalFaturasPendentes)}</div>
                   <div style={{ fontSize: '11px', color: textFaint, marginTop: '6px' }}>{totalFaturasPendentes > 0 ? 'a pagar' : 'em dia'}</div>
                 </div>
                 <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px' }}>
                   <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Disponível</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: resumo.saldoDisponivel < 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
-                  {totalFaturasPendentes > 0 && <div style={{ fontSize: '11px', color: textFaint, marginTop: '6px' }}>-{formatarMoeda(totalFaturasPendentes)} faturas</div>}
+                  <div style={{ fontSize: isMobile ? '1.15rem' : '1.625rem', fontWeight: 600, color: resumo.saldoDisponivel < 0 ? gold : textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(resumo.saldoDisponivel)}</div>
+                  {totalFaturasPendentes > 0 && <div style={{ fontSize: '11px', color: textFaint, marginTop: '6px' }}>-{formatarMoeda(totalFaturasPendentes)} fat.</div>}
                 </div>
                 <div style={{ background: bgCard, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '18px 20px', gridColumn: isMobile ? 'span 2' : 'auto' }}>
                   <div style={{ fontSize: '11px', fontWeight: 500, color: textFaint, letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: '8px' }}>Vale Alimentação</div>
-                  <div style={{ fontSize: isMobile ? '1.25rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(saldoVale)}</div>
+                  <div style={{ fontSize: isMobile ? '1.15rem' : '1.625rem', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums' }}>{formatarMoeda(saldoVale)}</div>
                 </div>
               </div>
 
@@ -647,7 +691,14 @@ export default function DashboardPage() {
                   </div>
                 ))}
                 {transacoes.filter(t => t.tipo === 'despesa').length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '2rem', color: textFaint, fontSize: '13px' }}>Nenhuma despesa neste mês</div>
+                  <div style={{ textAlign: 'center', padding: '40px 24px' }}>
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={gold} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '14px', opacity: 0.5 }}>
+                      <circle cx="12" cy="12" r="10"/>
+                      <line x1="12" y1="8" x2="12" y2="12"/>
+                      <line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                    <div style={{ fontSize: '13px', color: textFaint, letterSpacing: '-0.007em' }}>Nenhuma despesa registrada neste mês</div>
+                  </div>
                 )}
               </div>
             </div>

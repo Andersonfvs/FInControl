@@ -14,8 +14,6 @@ export default function LoginPage() {
   const [verificandoSessao, setVerificandoSessao] = useState(true);
 
   useEffect(() => {
-    // client-side navigation (router.replace) preserva o estado do Firebase em memória
-    // onAuthStateChanged dispara UMA vez com o estado real — sem loop possível
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
         router.replace('/dashboard');
@@ -35,7 +33,6 @@ export default function LoginPage() {
       router.replace('/dashboard');
     } catch (error: unknown) {
       const authError = error as { code?: string };
-      console.error('Erro no login:', error);
       if (authError.code === 'auth/invalid-credential' || authError.code === 'auth/wrong-password') {
         setErro('Email ou senha incorretos');
       } else if (authError.code === 'auth/user-not-found') {
@@ -51,168 +48,166 @@ export default function LoginPage() {
 
   if (verificandoSessao) {
     return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: '#fafafa'
-      }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000' }}>
         <div style={{ textAlign: 'center' }}>
-          <div style={{
-            width: '40px',
-            height: '40px',
-            border: '3px solid #e5e7eb',
-            borderTop: '3px solid #10b981',
-            borderRadius: '50%',
-            animation: 'spin 0.8s linear infinite',
-            margin: '0 auto 1rem'
-          }}></div>
-          <span style={{ color: '#6b7280', fontSize: '0.875rem' }}>
-            Verificando sessão...
-          </span>
+          <div className="slash-coin-loader" />
         </div>
-        <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        <style>{`
+          .slash-coin-loader { display: inline-block; transform: translateZ(1px); }
+          .slash-coin-loader::after {
+            content: 'R$';
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            font-size: 16px;
+            font-weight: 700;
+            font-family: 'Inter', sans-serif;
+            letter-spacing: -0.03em;
+            background: #cc9166;
+            color: #3d2a1a;
+            border: 3px double #a8744a;
+            box-sizing: border-box;
+            box-shadow: 0 0 0 1px #2e3038;
+            animation: coin-flip 3s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+          }
+          @keyframes coin-flip {
+            0%, 100% { animation-timing-function: cubic-bezier(0.5, 0, 1, 0.5); }
+            0%   { transform: rotateY(0deg); }
+            50%  { transform: rotateY(1800deg); animation-timing-function: cubic-bezier(0, 0.5, 0.5, 1); }
+            100% { transform: rotateY(3600deg); }
+          }
+        `}</style>
       </div>
     );
   }
 
   return (
-    <>
-      <div className="login-container">
-        <div className="banner-lateral">
-          <div className="logo-container">💎</div>
-          <h1 className="titulo">FinControl</h1>
-          <p className="subtitulo">Controle financeiro familiar inteligente</p>
-          <div className="features">
-            <div className="feature-card">
-              <div className="feature-icon">✓</div>
-              <div>
-                <div className="feature-titulo">Dashboard intuitivo</div>
-                <div className="feature-desc">Visualize suas finanças em tempo real</div>
-              </div>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">✓</div>
-              <div>
-                <div className="feature-titulo">Gestão de cartões</div>
-                <div className="feature-desc">Controle de faturas e parcelas</div>
-              </div>
-            </div>
-            <div className="feature-card">
-              <div className="feature-icon">✓</div>
-              <div>
-                <div className="feature-titulo">Sincronizado na nuvem</div>
-                <div className="feature-desc">Acesse de qualquer lugar</div>
-              </div>
-            </div>
-          </div>
+    <div style={{ minHeight: '100vh', display: 'flex', background: '#000000', fontFamily: "'Inter', -apple-system, system-ui, sans-serif" }}>
+
+      {/* Painel editorial — desktop */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '52px 64px', borderRight: '1px solid #1c1d22' }} className="slash-panel">
+        <div style={{ fontSize: '15px', fontWeight: 600, color: '#e2e3e9', letterSpacing: '-0.007em' }}>
+          Fin<span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontStyle: 'italic', fontWeight: 400, color: '#cc9166' }}>Control</span>
         </div>
 
-        <div className="form-container">
-          <div className="form-wrapper">
-            <div className="logo-mobile">
-              <div className="logo-icon">💎</div>
-              <h1 className="titulo-mobile">FinControl</h1>
+        <div>
+          <div style={{ fontSize: '11px', fontWeight: 500, color: '#5e616e', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '20px' }}>Controle financeiro familiar</div>
+          <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: 'clamp(2.5rem, 4vw, 3.5rem)', fontWeight: 400, color: '#e2e3e9', lineHeight: 1.15, letterSpacing: '-0.01em', margin: 0 }}>
+            Suas finanças,<br />
+            <span style={{ fontStyle: 'italic', color: '#cc9166' }}>clareza total.</span>
+          </h1>
+          <p style={{ fontSize: '15px', color: '#777a88', letterSpacing: '-0.007em', marginTop: '24px', lineHeight: 1.6, maxWidth: '360px' }}>
+            Dashboard completo para acompanhar receitas, despesas, cartões e metas em um só lugar.
+          </p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '32px' }}>
+          {[
+            { valor: 'Tempo real', desc: 'Sincronizado' },
+            { valor: 'Cartões', desc: 'Faturas e parcelas' },
+            { valor: 'Metas', desc: 'Reserva de emergência' },
+          ].map(item => (
+            <div key={item.valor}>
+              <div style={{ fontSize: '13px', fontWeight: 600, color: '#e2e3e9', letterSpacing: '-0.007em' }}>{item.valor}</div>
+              <div style={{ fontSize: '11px', color: '#5e616e', marginTop: '2px', letterSpacing: '-0.007em' }}>{item.desc}</div>
             </div>
-
-            <div className="form-header">
-              <h2 className="form-titulo">Bem-vindo de volta!</h2>
-              <p className="form-subtitulo">Entre com suas credenciais</p>
-            </div>
-
-            {erro && (
-              <div className="erro-box">
-                <span>⚠️</span>
-                {erro}
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="form">
-              <div className="input-group">
-                <label className="input-label">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="seu@email.com"
-                  required
-                  disabled={carregando}
-                  className="input-field"
-                />
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Senha</label>
-                <input
-                  type="password"
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  disabled={carregando}
-                  className="input-field"
-                />
-              </div>
-
-              <button type="submit" disabled={carregando} className="btn-entrar">
-                {carregando ? (
-                  <>
-                    <div className="spinner"></div>
-                    Entrando...
-                  </>
-                ) : (
-                  <>
-                    <span>🔓</span>
-                    Entrar
-                  </>
-                )}
-              </button>
-            </form>
-          </div>
+          ))}
         </div>
       </div>
 
-      <style jsx>{`
-        .login-container { min-height: 100vh; display: flex; background: #fafafa; }
-        .banner-lateral { flex: 1; background: linear-gradient(135deg, #047857, #1e3a8a); padding: 3rem; display: flex; flex-direction: column; justify-content: center; color: white; }
-        .logo-container { width: 80px; height: 80px; background: rgba(255, 255, 255, 0.2); border-radius: 1rem; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; margin-bottom: 2rem; backdrop-filter: blur(10px); }
-        .titulo { font-size: 3rem; font-weight: 800; margin-bottom: 1rem; letter-spacing: -0.02em; }
-        .subtitulo { font-size: 1.25rem; opacity: 0.9; margin-bottom: 3rem; }
-        .features { display: flex; flex-direction: column; gap: 1rem; }
-        .feature-card { display: flex; gap: 1rem; align-items: center; background: rgba(255, 255, 255, 0.1); padding: 1rem; border-radius: 0.75rem; backdrop-filter: blur(10px); }
-        .feature-icon { font-size: 1.5rem; }
-        .feature-titulo { font-weight: 600; }
-        .feature-desc { font-size: 0.875rem; opacity: 0.9; }
-        .form-container { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2rem; }
-        .form-wrapper { width: 100%; max-width: 400px; }
-        .logo-mobile { display: none; }
-        .form-header { margin-bottom: 2rem; }
-        .form-titulo { font-size: 2rem; fontWeight: 700; margin-bottom: 0.5rem; color: #111827; }
-        .form-subtitulo { color: #6b7280; font-size: 1rem; }
-        .erro-box { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; padding: 0.75rem 1rem; border-radius: 0.5rem; margin-bottom: 1.5rem; font-size: 0.875rem; display: flex; align-items: center; gap: 0.5rem; }
-        .form { display: flex; flex-direction: column; gap: 1.25rem; }
-        .input-group { display: flex; flex-direction: column; }
-        .input-label { display: block; font-weight: 600; margin-bottom: 0.5rem; font-size: 0.875rem; color: #374151; }
-        .input-field { width: 100%; padding: 0.75rem; border: 1px solid #e5e7eb; border-radius: 0.5rem; font-size: 0.9375rem; outline: none; box-sizing: border-box; }
-        .input-field:focus { border-color: #10b981; }
-        .input-field:disabled { background: #f9fafb; cursor: not-allowed; }
-        .btn-entrar { width: 100%; padding: 0.875rem 1.5rem; background: linear-gradient(135deg, #10b981, #059669); color: white; border: none; border-radius: 0.5rem; font-size: 1rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 0.5rem; transition: opacity 0.2s; }
-        .btn-entrar:hover:not(:disabled) { opacity: 0.9; }
-        .btn-entrar:disabled { cursor: not-allowed; opacity: 0.5; }
-        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255, 255, 255, 0.3); border-top: 2px solid white; border-radius: 50%; animation: spin 0.8s linear infinite; }
-        @keyframes spin { to { transform: rotate(360deg); } }
+      {/* Formulário */}
+      <div style={{ width: '420px', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '48px 48px' }} className="slash-form-panel">
+        <div style={{ width: '100%' }}>
+
+          <div style={{ marginBottom: '40px' }} className="slash-logo-mobile">
+            <div style={{ fontSize: '15px', fontWeight: 600, color: '#e2e3e9', letterSpacing: '-0.007em' }}>
+              Fin<span style={{ fontFamily: "'Playfair Display', Georgia, serif", fontStyle: 'italic', fontWeight: 400, color: '#cc9166' }}>Control</span>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '32px' }}>
+            <h2 style={{ fontSize: '22px', fontWeight: 600, color: '#e2e3e9', letterSpacing: '-0.02em', margin: 0, marginBottom: '6px' }}>Acessar conta</h2>
+            <p style={{ fontSize: '13px', color: '#777a88', margin: 0, letterSpacing: '-0.007em' }}>Entre com suas credenciais para continuar</p>
+          </div>
+
+          {erro && (
+            <div style={{ background: '#1c1d22', border: '1px solid #cc916640', borderRadius: '2px', padding: '10px 14px', marginBottom: '24px', fontSize: '13px', color: '#cc9166', letterSpacing: '-0.007em' }}>
+              {erro}
+            </div>
+          )}
+
+          <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#5e616e', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px' }}>Email</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                placeholder="seu@email.com"
+                required
+                disabled={carregando}
+                style={{ width: '100%', padding: '10px 12px', background: '#121317', border: '1px solid #2e3038', borderRadius: '2px', fontSize: '14px', color: '#e2e3e9', outline: 'none', boxSizing: 'border-box', letterSpacing: '-0.007em', fontFamily: 'inherit' }}
+                onFocus={e => e.target.style.borderColor = '#cc9166'}
+                onBlur={e => e.target.style.borderColor = '#2e3038'}
+              />
+            </div>
+
+            <div>
+              <label style={{ display: 'block', fontSize: '11px', fontWeight: 500, color: '#5e616e', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px' }}>Senha</label>
+              <input
+                type="password"
+                value={senha}
+                onChange={e => setSenha(e.target.value)}
+                placeholder="••••••••"
+                required
+                disabled={carregando}
+                style={{ width: '100%', padding: '10px 12px', background: '#121317', border: '1px solid #2e3038', borderRadius: '2px', fontSize: '14px', color: '#e2e3e9', outline: 'none', boxSizing: 'border-box', letterSpacing: '-0.007em', fontFamily: 'inherit' }}
+                onFocus={e => e.target.style.borderColor = '#cc9166'}
+                onBlur={e => e.target.style.borderColor = '#2e3038'}
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={carregando}
+              style={{ marginTop: '8px', width: '100%', padding: '11px', background: carregando ? '#1c1d22' : '#ffffff', color: carregando ? '#5e616e' : '#08080a', border: '1px solid ' + (carregando ? '#2e3038' : '#ffffff'), borderRadius: '2px', fontSize: '14px', fontWeight: 600, cursor: carregando ? 'not-allowed' : 'pointer', letterSpacing: '-0.007em', fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: 'background 0.15s, color 0.15s' }}
+            >
+              {carregando ? (
+                <>
+                  <div style={{ width: '14px', height: '14px', border: '1.5px solid #2e3038', borderTop: '1.5px solid #cc9166', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                  Entrando...
+                </>
+              ) : 'Entrar'}
+            </button>
+          </form>
+
+          <p style={{ marginTop: '32px', fontSize: '12px', color: '#464853', letterSpacing: '-0.007em', textAlign: 'center', lineHeight: 1.6 }}>
+            Acesso restrito aos membros da família.<br />Conta gerenciada pelo administrador.
+          </p>
+        </div>
+      </div>
+
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Inter:wght@400;500;600&display=swap');
+        @keyframes spin { to { transform: rotate(360deg) } }
+
+        .slash-logo-mobile { display: none !important; }
+
         @media (max-width: 768px) {
-          .login-container { flex-direction: column; }
-          .banner-lateral { display: none; }
-          .logo-mobile { display: flex; flex-direction: column; align-items: center; margin-bottom: 2rem; }
-          .logo-icon { width: 60px; height: 60px; background: linear-gradient(135deg, #10b981, #059669); border-radius: 1rem; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin-bottom: 0.75rem; }
-          .titulo-mobile { font-size: 1.75rem; font-weight: 800; color: #111827; margin: 0; }
-          .form-container { padding: 1.5rem; }
-          .form-titulo { font-size: 1.5rem; }
-          .form-subtitulo { font-size: 0.875rem; }
+          .slash-panel { display: none !important; }
+          .slash-form-panel {
+            width: 100% !important;
+            padding: 48px 28px !important;
+          }
+          .slash-logo-mobile { display: block !important; }
         }
+
+        input::placeholder { color: #464853; }
+        input:disabled { opacity: 0.5; cursor: not-allowed; }
       `}</style>
-    </>
+    </div>
   );
 }

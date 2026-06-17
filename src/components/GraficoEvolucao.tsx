@@ -2,6 +2,7 @@
 
 import { formatarMoeda } from '@/utils/financeiro';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import EmptyState from './EmptyState';
 
 interface DadosEvolucao {
   mes: string;
@@ -18,25 +19,7 @@ export default function GraficoEvolucao({ dados }: Props) {
   const isMobile = useIsMobile();
 
   if (!dados || dados.length === 0) {
-    return (
-      <div style={{
-        background: 'white',
-        border: '1px solid #e5e7eb',
-        borderRadius: '0.5rem',
-        padding: '1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '300px'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📈</div>
-          <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-            Sem dados para mostrar evolução
-          </div>
-        </div>
-      </div>
-    );
+    return <EmptyState icon="chart-bar" title="Sem dados de evolução" description="Registre transações em meses anteriores para ver o histórico" />;
   }
 
   const maxReceitas = Math.max(...dados.map(d => d.receitas || 0));
@@ -44,25 +27,7 @@ export default function GraficoEvolucao({ dados }: Props) {
   const maxValor = Math.max(maxReceitas, maxDespesas);
 
   if (maxValor === 0 || isNaN(maxValor) || !isFinite(maxValor)) {
-    return (
-      <div style={{
-        background: 'white',
-        border: '1px solid #e5e7eb',
-        borderRadius: '0.5rem',
-        padding: '1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        minHeight: '300px'
-      }}>
-        <div style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>📈</div>
-          <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
-            Sem movimentações para exibir
-          </div>
-        </div>
-      </div>
-    );
+    return <EmptyState icon="chart-bar" title="Sem movimentações para exibir" description="Registre receitas e despesas para ver a evolução" />;
   }
 
   // Mobile mostra só os últimos 3 meses para não amontoar os labels

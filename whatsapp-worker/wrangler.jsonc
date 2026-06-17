@@ -1,0 +1,15 @@
+{
+  // Config do Cloudflare Worker do FinControl-WhatsApp.
+  // Deploy: wrangler deploy (a partir desta pasta).
+  // Os SEGREDOS (WHATSAPP_TOKEN, FIREBASE_SECRET) NÃO ficam aqui — são
+  // mantidos como "secrets" no painel da Cloudflare e preservados a cada deploy.
+  "name": "fincontrol-whats",
+  "main": "worker.js",
+  "compatibility_date": "2025-01-01",
+  "vars": {
+    "PHONE_NUMBER_ID": "1138829055987180",
+    "VERIFY_TOKEN": "fincontrol-verify-2026",
+    "DISCORD_PUBLIC_KEY": "079b322c64183c4a51a3e01029fe02d2b9adf08106dcc426cb1ed99fb30f420c",
+    "DISCORD_APP_ID": "1516667437888835594"
+  }
+}

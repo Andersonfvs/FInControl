@@ -4,6 +4,10 @@ import './globals.css'
 export const metadata: Metadata = {
   title: 'FinControl - Controle Financeiro',
   description: 'Sistema de controle financeiro familiar',
+  icons: {
+    icon: '/logo-fincontrol.png',
+    apple: '/logo-fincontrol.png',
+  },
 }
 
 export default function RootLayout({

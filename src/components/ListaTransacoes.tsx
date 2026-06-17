@@ -5,6 +5,7 @@ import { Transacao } from '@/types';
 import { formatarMoeda } from '@/utils/financeiro';
 import { obterIconeCategoria, parsearInputMagico, DadosInputMagico } from '@/utils/categorias';
 import { useIsMobile } from '@/hooks/useIsMobile';
+import { useDarkMode } from '@/hooks/useDarkMode';
 
 interface Props {
   transacoes: Transacao[];
@@ -22,6 +23,16 @@ export default function ListaTransacoes({
   onMarcarPago, onDuplicar, onInputMagico, onToast
 }: Props) {
   const isMobile = useIsMobile();
+  const { darkMode } = useDarkMode();
+  const bg       = darkMode ? '#000000' : '#f5f4f0';
+  const bgCard   = darkMode ? '#1c1d22' : '#ffffff';
+  const border   = darkMode ? '#2e3038' : '#e0ddd6';
+  const textPrimary = darkMode ? '#e2e3e9' : '#1a1a18';
+  const textMuted   = darkMode ? '#777a88' : '#7a7a75';
+  const textFaint   = darkMode ? '#5e616e' : '#9a9a95';
+  const bgRaised    = darkMode ? '#121317' : '#f9f8f5';
+  const gold        = '#cc9166';
+
   const [busca, setBusca] = useState('');
   const [ordenacao, setOrdenacao] = useState<'data' | 'valor' | 'categoria'>('data');
   const [carregandoId, setCarregandoId] = useState<string | null>(null);
@@ -74,10 +85,15 @@ export default function ListaTransacoes({
     return (
       <div>
         <InputMagicoField value={inputMagico} onChange={setInputMagico} onKeyDown={handleInputMagicoKeyDown} />
-        <div style={{ background: 'white', border: '1px solid #e5e7eb', borderRadius: '0.5rem', padding: '3rem', textAlign: 'center' }}>
-          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📋</div>
-          <h3 style={{ fontSize: '1.25rem', fontWeight: '600', marginBottom: '0.5rem' }}>Nenhuma transação ainda</h3>
-          <p style={{ color: '#6b7280', fontSize: '0.875rem' }}>Adicione receitas ou despesas para começar</p>
+        <div style={{ background: bgCard, border: `1px solid ${border}`, borderRadius: '10px', padding: isMobile ? '48px 24px' : '64px 48px', textAlign: 'center' }}>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke={gold} strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: '20px', opacity: 0.7 }}>
+            <rect x="2" y="3" width="20" height="18" rx="2"/>
+            <line x1="7" y1="8" x2="17" y2="8"/>
+            <line x1="7" y1="12" x2="17" y2="12"/>
+            <line x1="7" y1="16" x2="12" y2="16"/>
+          </svg>
+          <div style={{ fontSize: '16px', fontWeight: 600, color: textPrimary, letterSpacing: '-0.02em', marginBottom: '8px' }}>Nenhuma transação neste mês</div>
+          <p style={{ fontSize: '13px', color: textFaint, letterSpacing: '-0.007em', margin: 0 }}>Use o campo acima para registrar uma receita ou despesa</p>
         </div>
       </div>
     );
