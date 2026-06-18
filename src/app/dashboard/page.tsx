@@ -77,6 +77,54 @@ function normalizarFaturas(raw: unknown): { [mes: string]: FaturaMensal[] } {
   return out;
 }
 
+// ─── Self-healing: garante formato keyed antes de qualquer escrita atômica ────
+// Idempotentes — só reescrevem o nó se ainda estiver em array. Assim os handlers
+// atômicos funcionam mesmo que a migração global não tenha rodado ainda.
+
+// dadosPorMes/{mes}: array [Transacao] → mapa { id: Transacao }
+async function garantirMesKeyed(uid: string, mes: string): Promise<void> {
+  const r = ref(database, `usuarios/${uid}/dadosPorMes/${mes}`);
+  const v = (await get(r)).val();
+  if (!Array.isArray(v)) return; // já keyed (ou vazio) → nada a fazer
+  const keyed: Record<string, Transacao> = {};
+  (v as Transacao[]).forEach(t => { if (t && t.id) keyed[t.id] = t; });
+  await set(r, keyed);
+}
+
+// faturas/{mes}: array [Fatura] (itens como array) → mapa { cartaoId: { ..., itens: { itemId: item } } }
+async function garantirFaturaKeyed(uid: string, mes: string): Promise<void> {
+  const r = ref(database, `usuarios/${uid}/faturas/${mes}`);
+  const v = (await get(r)).val();
+  if (!v) return;
+  const lista = (Array.isArray(v) ? v : Object.values(v as object)) as Array<Record<string, unknown>>;
+  // precisa converter se o nó é array OU se algum item ainda está como array
+  const precisa = Array.isArray(v) || lista.some(f => f && Array.isArray((f as { itens?: unknown }).itens));
+  if (!precisa) return;
+  const keyed: Record<string, unknown> = {};
+  for (const fRaw of lista) {
+    if (!fRaw || !fRaw.cartaoId) continue;
+    const cartaoId = fRaw.cartaoId as string;
+    const itRaw = (fRaw as { itens?: unknown }).itens;
+    const itensArr = (Array.isArray(itRaw) ? itRaw : (itRaw && typeof itRaw === 'object' ? Object.values(itRaw as object) : [])) as ItemFatura[];
+    const itensKeyed: Record<string, ItemFatura> = {};
+    itensArr.forEach(it => { if (it && it.id) itensKeyed[it.id] = it; });
+    const existente = keyed[cartaoId] as { itens: Record<string, ItemFatura>; paga?: boolean } | undefined;
+    if (existente) {
+      Object.assign(existente.itens, itensKeyed);
+      if (fRaw.paga) existente.paga = true;
+    } else {
+      keyed[cartaoId] = {
+        cartaoId,
+        mesReferencia: (fRaw.mesReferencia as string) || mes,
+        paga: !!fRaw.paga,
+        ...(fRaw.dataPagamento ? { dataPagamento: fRaw.dataPagamento } : {}),
+        itens: itensKeyed,
+      };
+    }
+  }
+  await set(r, keyed);
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -104,6 +152,11 @@ export default function DashboardPage() {
   const [categoriaPreenchida, setCategoriaPreenchida] = useState('');
   const [descricaoPreenchida, setDescricaoPreenchida] = useState('');
   const [dadosIniciais, setDadosIniciais] = useState<DadosInputMagico | null>(null);
+
+  const [mostrarMigrar, setMostrarMigrar] = useState(false);
+  useEffect(() => {
+    if (typeof window !== 'undefined') setMostrarMigrar(new URLSearchParams(window.location.search).has('migrar'));
+  }, []);
 
   const [toast, setToast] = useState({ visivel: false, mensagem: '', tipo: 'sucesso' as ToastTipo });
   const showToast = useCallback((mensagem: string, tipo: ToastTipo = 'sucesso') => setToast({ visivel: true, mensagem, tipo }), []);
@@ -254,10 +307,11 @@ export default function DashboardPage() {
     if (!usuario) return;
     try {
       const mesKey = gerarMesKey(dataReferencia);
-      const transacoes = sistema.dadosPorMes[mesKey] || [];
-      const transacao = transacoes.find(t => t.id === id);
+      const transacao = (sistema.dadosPorMes[mesKey] || []).find(t => t.id === id);
       if (!transacao) { showToast('Transação não encontrada', 'erro'); return; }
-      await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), transacoes.map(t => t.id === id ? { ...t, pago: !t.pago } : t));
+      await garantirMesKeyed(usuario.uid, mesKey);
+      // update() atômico: altera só o campo pago do id, sem reescrever o mês
+      await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}/${id}`), { pago: !transacao.pago });
       showToast(!transacao.pago ? '✓ Marcado como pago!' : 'Marcado como pendente', !transacao.pago ? 'sucesso' : 'aviso');
     } catch { showToast('Erro ao atualizar transação', 'erro'); }
   };
@@ -266,37 +320,32 @@ export default function DashboardPage() {
     if (!usuario) return;
     try {
       const mesKey = gerarMesKey(dataReferencia);
-      const transacoes = sistema.dadosPorMes[mesKey] || [];
-      const transacao = transacoes.find(t => t.id === id);
+      const transacao = (sistema.dadosPorMes[mesKey] || []).find(t => t.id === id);
       if (transacao?.cartaoId && transacao.categoria === 'Cartão de Crédito') {
-        const novasFaturas = JSON.parse(JSON.stringify(sistema.faturas));
-        if (novasFaturas[mesKey]) {
-          novasFaturas[mesKey] = (novasFaturas[mesKey] as FaturaMensal[]).map((f: FaturaMensal) => {
-            if (f.cartaoId !== transacao.cartaoId) return f;
-            const { dataPagamento, ...resto } = f;
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const _ = dataPagamento;
-            return { ...resto, paga: false };
-          });
-          await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+        // era um pagamento de fatura → devolve a fatura para pendente (atômico)
+        const temFatura = (sistema.faturas[mesKey] || []).some(f => f.cartaoId === transacao.cartaoId);
+        if (temFatura) {
+          await garantirFaturaKeyed(usuario.uid, mesKey);
+          await update(ref(database, `usuarios/${usuario.uid}/faturas/${mesKey}/${transacao.cartaoId}`), { paga: false, dataPagamento: null });
         }
         showToast('Pagamento removido — fatura voltou para pendente!', 'aviso');
       } else {
         showToast('Transação excluída!', 'info');
       }
-      await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), transacoes.filter(t => t.id !== id));
+      await garantirMesKeyed(usuario.uid, mesKey);
+      // update() atômico: remove só o id (null = delete), sem reescrever o mês
+      await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), { [id]: null });
     } catch { showToast('Erro ao excluir transação', 'erro'); }
   };
 
   const handleDuplicar = async (transacao: Transacao) => {
     if (!usuario) return;
     try {
-      const novaTransacao = { ...transacao, id: gerarId(), data: new Date().toISOString().split('T')[0] };
+      const novoId = gerarId();
+      const novaTransacao = { ...transacao, id: novoId, data: new Date().toISOString().split('T')[0] };
       const mesKey = gerarMesKey(new Date());
-      const dbRef = ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`);
-      const snapshot = await get(dbRef);
-      const existentes = snapshot.exists() ? snapshot.val() : [];
-      await set(dbRef, Array.isArray(existentes) ? [...existentes, novaTransacao] : [novaTransacao]);
+      // update() atômico: adiciona só o id novo, sem reler o mês
+      await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), { [novoId]: novaTransacao });
       showToast('Transação duplicada!', 'sucesso');
     } catch { showToast('Erro ao duplicar transação', 'erro'); }
   };
@@ -330,14 +379,9 @@ export default function DashboardPage() {
   const handleExcluirItemFatura = async (cartaoId: string, itemId: string, mesKey: string) => {
     if (!usuario) return;
     try {
-      const novasFaturas = { ...sistema.faturas };
-      if (!novasFaturas[mesKey]) return;
-      novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
-        if (f.cartaoId !== cartaoId) return f;
-        const novosItens = (f.itens || []).filter(i => i.id !== itemId);
-        return { ...f, itens: novosItens, totalFatura: novosItens.reduce((s, i) => s + i.valor, 0) };
-      });
-      await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      await garantirFaturaKeyed(usuario.uid, mesKey);
+      // update() atômico: remove só o item (null = delete) dentro de itens
+      await update(ref(database, `usuarios/${usuario.uid}/faturas/${mesKey}/${cartaoId}/itens`), { [itemId]: null });
       showToast('Item removido da fatura!', 'info');
     } catch { showToast('Erro ao remover item', 'erro'); }
   };
@@ -345,14 +389,9 @@ export default function DashboardPage() {
   const handleEditarItemFatura = async (cartaoId: string, item: ItemFatura, mesKey: string) => {
     if (!usuario) return;
     try {
-      const novasFaturas = { ...sistema.faturas };
-      if (!novasFaturas[mesKey]) return;
-      novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
-        if (f.cartaoId !== cartaoId) return f;
-        const novosItens = (f.itens || []).map(i => i.id === item.id ? item : i);
-        return { ...f, itens: novosItens, totalFatura: novosItens.reduce((s, i) => s + i.valor, 0) };
-      });
-      await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      await garantirFaturaKeyed(usuario.uid, mesKey);
+      // update() atômico: substitui só o item editado dentro de itens
+      await update(ref(database, `usuarios/${usuario.uid}/faturas/${mesKey}/${cartaoId}/itens`), { [item.id]: item });
       showToast('Item da fatura atualizado!', 'sucesso');
     } catch { showToast('Erro ao editar item', 'erro'); }
   };
@@ -389,23 +428,19 @@ export default function DashboardPage() {
   const handleDesfazerPagamento = async (cartaoId: string, mesKey: string) => {
     if (!usuario) return;
     try {
-      // Remove a transação de pagamento gerada por handlePagarFatura
-      const transacoes = sistema.dadosPorMes[mesKey] || [];
-      const semPagamento = transacoes.filter(
-        t => !(t.cartaoId === cartaoId && t.categoria === 'Cartão de Crédito' && t.tipo === 'despesa')
+      await garantirMesKeyed(usuario.uid, mesKey);
+      // remove (atômico) as despesas de pagamento desse cartão geradas por handlePagarFatura
+      const pagamentos = (sistema.dadosPorMes[mesKey] || []).filter(
+        t => t.cartaoId === cartaoId && t.categoria === 'Cartão de Crédito' && t.tipo === 'despesa'
       );
-      await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), semPagamento);
-      // Marca a fatura como não paga
-      const novasFaturas = { ...sistema.faturas };
-      if (novasFaturas[mesKey]) {
-        novasFaturas[mesKey] = novasFaturas[mesKey].map(f => {
-          if (f.cartaoId !== cartaoId) return f;
-          const { dataPagamento, ...resto } = f as FaturaMensal & { dataPagamento?: string };
-          void dataPagamento;
-          return { ...resto, paga: false };
-        });
-        await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      if (pagamentos.length) {
+        const delTx: Record<string, null> = {};
+        pagamentos.forEach(t => { delTx[t.id] = null; });
+        await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), delTx);
       }
+      // marca a fatura como não paga (atômico — só os 2 campos)
+      await garantirFaturaKeyed(usuario.uid, mesKey);
+      await update(ref(database, `usuarios/${usuario.uid}/faturas/${mesKey}/${cartaoId}`), { paga: false, dataPagamento: null });
       showToast('Pagamento desfeito — fatura voltou para pendente', 'aviso');
     } catch { showToast('Erro ao desfazer pagamento', 'erro'); }
   };
@@ -421,12 +456,11 @@ export default function DashboardPage() {
         categoria: 'Cartão de Crédito', descricao: `Fatura ${cartao.nome}`,
         valor: fatura.totalFatura, pessoa: usuario.nome, tipo: 'despesa', pago: true, cartaoId,
       };
-      await set(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), [...(sistema.dadosPorMes[mesKey] || []), despesa]);
-      const novasFaturas = { ...sistema.faturas };
-      novasFaturas[mesKey] = novasFaturas[mesKey].map(f =>
-        f.cartaoId === cartaoId ? { ...f, paga: true, dataPagamento: new Date().toISOString() } : f
-      );
-      await set(ref(database, `usuarios/${usuario.uid}/faturas`), novasFaturas);
+      // adiciona a despesa de pagamento (atômico — só o id novo)
+      await update(ref(database, `usuarios/${usuario.uid}/dadosPorMes/${mesKey}`), { [despesa.id]: despesa });
+      // marca a fatura como paga (atômico — só os 2 campos)
+      await garantirFaturaKeyed(usuario.uid, mesKey);
+      await update(ref(database, `usuarios/${usuario.uid}/faturas/${mesKey}/${cartaoId}`), { paga: true, dataPagamento: new Date().toISOString() });
       showToast(`Fatura de ${formatarMoeda(fatura.totalFatura)} paga!`, 'sucesso');
     } catch { showToast('Erro ao pagar fatura', 'erro'); }
   };
@@ -437,6 +471,24 @@ export default function DashboardPage() {
       await set(ref(database, `usuarios/${usuario.uid}/categoriasCustomizadas`), categorias);
       showToast('Categorias salvas!', 'sucesso');
     } catch { showToast('Erro ao salvar categorias', 'erro'); }
+  };
+
+  // ─── Migração em massa (one-shot): arrays → mapas keyed em todos os meses ────
+  const handleMigrar = async () => {
+    if (!usuario) return;
+    try {
+      showToast('Migrando dados…', 'info');
+      const base = `usuarios/${usuario.uid}`;
+      const [dSnap, fSnap] = await Promise.all([
+        get(ref(database, `${base}/dadosPorMes`)),
+        get(ref(database, `${base}/faturas`)),
+      ]);
+      const dMeses = dSnap.val() ? Object.keys(dSnap.val()) : [];
+      const fMeses = fSnap.val() ? Object.keys(fSnap.val()) : [];
+      for (const m of dMeses) await garantirMesKeyed(usuario.uid, m);
+      for (const m of fMeses) await garantirFaturaKeyed(usuario.uid, m);
+      showToast(`✅ Migração ok — ${dMeses.length} mês(es) de transações + ${fMeses.length} de faturas`, 'sucesso');
+    } catch (e) { console.error(e); showToast('Erro na migração', 'erro'); }
   };
 
   const handleSalvarReserva = async (reserva: SistemaFinanceiro['reservaEmergencia']) => {
@@ -585,6 +637,12 @@ export default function DashboardPage() {
                 style={{ width: '32px', height: '32px', padding: '0', background: 'transparent', color: textFaint, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 {darkMode ? '○' : '●'}
               </button>
+              {!isMobile && mostrarMigrar && (
+                <button onClick={handleMigrar} title="Converte dados antigos (arrays) para o formato keyed atômico — rode uma vez"
+                  style={{ padding: '6px 12px', background: 'transparent', color: gold, border: `1px solid ${gold}`, borderRadius: '2px', fontSize: '13px', fontWeight: 500, cursor: 'pointer', letterSpacing: '-0.007em' }}>
+                  Migrar Dados
+                </button>
+              )}
               {!isMobile && (
                 <button onClick={async () => { await signOut(auth); router.replace('/'); }}
                   style={{ padding: '6px 12px', background: 'transparent', color: textMuted, border: `1px solid ${borderColor}`, borderRadius: '2px', fontSize: '13px', fontWeight: 400, cursor: 'pointer', letterSpacing: '-0.007em' }}>
